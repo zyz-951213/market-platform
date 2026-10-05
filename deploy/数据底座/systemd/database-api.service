@@ -1,19 +1,19 @@
 [Unit]
-Description=Database Manager API (FastAPI, readonly)
+Description=数据底座 API(独立端口,可选;统一门户已内置该域)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/zhuyizhou/my_projects/market-platform/packages/data
-EnvironmentFile=-/home/zhuyizhou/my_projects/market-platform/packages/data/.env
+WorkingDirectory=@仓库根@
+EnvironmentFile=-@仓库根@/config/.env
 Environment=PYTHONUNBUFFERED=1
 Environment=SERVE_FRONTEND=0
-ExecStart=/home/zhuyizhou/miniconda3/bin/python -m uvicorn 后端.接口.应用:app --host 0.0.0.0 --port 18766
+ExecStart=@PYTHON@ -m uvicorn market_platform.data.接口.应用:app --host 0.0.0.0 --port 18766
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/home/zhuyizhou/my_projects/market-platform/packages/data/logs/api.log
-StandardError=append:/home/zhuyizhou/my_projects/market-platform/packages/data/logs/api.log
+StandardOutput=append:@仓库根@/日志/数据底座-api.log
+StandardError=append:@仓库根@/日志/数据底座-api.log
 
 [Install]
 WantedBy=default.target

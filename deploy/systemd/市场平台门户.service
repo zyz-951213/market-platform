@@ -1,0 +1,22 @@
+[Unit]
+Description=市场量化平台 统一门户(统一站点 + 数据底座/行为分析/指数预测 三域 API)
+Documentation=file:@仓库根@/docs/ARCHITECTURE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@仓库根@
+EnvironmentFile=-@仓库根@/config/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=MPLCONFIGDIR=@仓库根@/日志/matplotlib
+# 一个进程同时托管:统一站点(web/dist)与 /数据底座/api、/行为分析/api、/指数预测/api
+ExecStart=@PYTHON@ -m market_platform.cli web
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+StandardOutput=append:@仓库根@/日志/门户.log
+StandardError=append:@仓库根@/日志/门户.log
+
+[Install]
+WantedBy=default.target

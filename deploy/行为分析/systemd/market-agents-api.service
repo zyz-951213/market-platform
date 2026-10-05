@@ -1,0 +1,19 @@
+[Unit]
+Description=行为分析 API(独立端口,可选;统一门户已内置该域)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@仓库根@
+EnvironmentFile=-@仓库根@/config/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=MPLCONFIGDIR=@仓库根@/日志/matplotlib
+ExecStart=@PYTHON@ -m market_platform.cli agents web --host 0.0.0.0 --port 8766
+Restart=on-failure
+RestartSec=15
+StandardOutput=append:@仓库根@/日志/行为分析-api.log
+StandardError=append:@仓库根@/日志/行为分析-api.log
+
+[Install]
+WantedBy=default.target

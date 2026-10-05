@@ -1,6 +1,5 @@
 [Unit]
-Description=Market Predictor Paper Trading Timer (Friday 16:30, weekly decision)
-Requires=market-predictor-paper.service
+Description=指数预测 每周五 16:30 模拟盘决策
 
 [Timer]
 OnCalendar=Fri *-*-* 16:30:00

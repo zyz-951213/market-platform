@@ -1,0 +1,13 @@
+[Unit]
+Description=数据底座 每日增量更新(one-shot,幂等 upsert)
+After=network-online.target
+# 说明:启用前请确认上游数据源可用;单次运行约数十分钟
+[Service]
+Type=oneshot
+WorkingDirectory=@仓库根@
+EnvironmentFile=-@仓库根@/config/.env
+Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=3h
+ExecStart=@PYTHON@ -m market_platform.cli data 更新金融市场数据
+StandardOutput=append:@仓库根@/日志/数据底座-更新.log
+StandardError=append:@仓库根@/日志/数据底座-更新.log

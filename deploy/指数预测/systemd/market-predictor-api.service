@@ -1,16 +1,18 @@
 [Unit]
-Description=Market Predictor API (FastAPI)
+Description=指数预测 API(独立端口,可选;统一门户已内置该域)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=@REPO_ROOT@
-EnvironmentFile=-@REPO_ROOT@/.env
+WorkingDirectory=@仓库根@
+EnvironmentFile=-@仓库根@/config/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=@MARKET_PREDICTOR@ web --host 0.0.0.0 --port 18765
+ExecStart=@PYTHON@ -m market_platform.cli predictor web --host 0.0.0.0 --port 18765
 Restart=on-failure
 RestartSec=10
+StandardOutput=append:@仓库根@/日志/指数预测-api.log
+StandardError=append:@仓库根@/日志/指数预测-api.log
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

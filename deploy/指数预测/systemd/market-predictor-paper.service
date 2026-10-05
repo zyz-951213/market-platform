@@ -1,10 +1,12 @@
 [Unit]
-Description=Market Predictor Paper Trading (one-shot)
-After=network-online.target market-predictor-api.service
+Description=指数预测 模拟盘调仓(one-shot)
+After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=@REPO_ROOT@
-EnvironmentFile=-@REPO_ROOT@/.env
+WorkingDirectory=@仓库根@
+EnvironmentFile=-@仓库根@/config/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=@MARKET_PREDICTOR@ paper --once
+ExecStart=@PYTHON@ -m market_platform.cli predictor paper --once
+StandardOutput=append:@仓库根@/日志/指数预测-模拟盘.log
+StandardError=append:@仓库根@/日志/指数预测-模拟盘.log
