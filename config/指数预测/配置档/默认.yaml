@@ -646,7 +646,10 @@ backtest:
   train_ratio: 0.75                # 未指定 test_start_date 时，用后段 25% 做回测
   test_start_date: "2015-05-08"    # 闲置四品种齐全首日（repo/shibor 2015-05-08 起）
   min_train_bars: 126              # 约半年预热后进入样本外回测（≈2005-07 起）
-  rebalance_freq: 5
+  # 命名修正(评审 R15):此项**不是调仓频率**,而是"重训/测试块长度"——每 5 根 bar
+  # 重训一次模型并预测整块;真实调仓节奏由 strategy.weekly_* / interval_days 决定。
+  retrain_block: 5
+  rebalance_freq: 5                # 兼容旧键(= retrain_block),新配置请用 retrain_block
   commission: 0.0003
   slippage: 0.0005
 
@@ -712,7 +715,13 @@ backtest:
 
     min_hold_periods: 10            # 最短持仓约两周
     cooldown_periods: 5
-    stop_loss: 0.08                  # 单日大跌 8% 才紧急减叠加
+    # 止损(评审 R13/R12):
+    #   · 依据默认是"入场以来**已实现**回撤"(因果);置 stop_loss_uses_future_label=true
+    #     退回旧行为(用未来一期收益,前视,仅用于复现旧结果)。
+    #   · ⚠️ unified_sharpe 主路径**不执行**本项与止盈/波动上限/双频闸门
+    #     (`market-platform 自检` 会列出来)。
+    stop_loss: 0.08                  # 入场以来回撤 8% 触发紧急减叠加
+    stop_loss_uses_future_label: false
     emergency_reduce_scale: 0.6
     rebalance_step: 0.35
 
@@ -745,6 +754,10 @@ backtest:
     # B：分区准确率缩放加仓（B1 保留）
     partition_overlay_scale:
       enabled: true
+      # 命中率来源(评审 R13):causal=只用当根之前已结算的预测(默认,因果);
+      # global=旧行为,用全历史命中率(前视,仅复现旧结果)
+      source: causal
+      min_n: 20                      # 因果账本在该桶的样本数下限,不足则不缩放
       add_only: true
       low_accuracy: 0.45
       high_accuracy: 0.55

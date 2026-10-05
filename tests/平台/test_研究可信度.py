@@ -319,3 +319,98 @@ def test_走查概率_全缺失块必须记为失败而不是静默填零(monkey
     assert 统计["已填行"] == 0
     assert 统计["失败块"] >= 1, "全缺失块必须记账为失败,不得算作已填"
     assert np.isnan(proba).all()
+
+
+# ── R11/R12/R13/R15:执行正确性与显式披露 ─────────────────────────────────
+def _假引擎(**覆盖):
+    """构造未初始化的 BacktestEngine,只测纯方法(避免整套回测依赖)。"""
+    from market_platform.predictor.分析.回测.引擎 import BacktestEngine
+
+    引擎 = BacktestEngine.__new__(BacktestEngine)
+    引擎.partition_overlay_enabled = True
+    引擎.partition_overlay_source = "causal"
+    引擎.因果分桶最小样本 = 2
+    引擎._分桶命中 = {}
+    引擎._分桶总数 = {}
+    for 键, 值 in 覆盖.items():
+        setattr(引擎, 键, 值)
+    return 引擎
+
+
+def test_因果分桶准确率_样本不足时不生效():
+    引擎 = _假引擎()
+    引擎._记入分桶结果(0.9, True)
+    assert 引擎._因果分桶准确率(0.9) is None, "样本不足必须返回 None(不缩放)"
+
+
+def test_因果分桶准确率_只反映已记入的历史():
+    引擎 = _假引擎()
+    引擎._记入分桶结果(0.9, True)
+    引擎._记入分桶结果(0.9, False)
+    assert 引擎._因果分桶准确率(0.9) == pytest.approx(0.5)
+    # 再记入两次命中后,准确率上升;且此前返回的 0.5 是基于"当时已知"的结果
+    准确率_之前 = 引擎._因果分桶准确率(0.9)
+    引擎._记入分桶结果(0.9, True)
+    引擎._记入分桶结果(0.9, True)
+    assert 引擎._因果分桶准确率(0.9) > 准确率_之前
+
+
+def test_重训块长改名后仍兼容旧键():
+    from market_platform.predictor.分析.回测.引擎 import BacktestEngine
+    import inspect
+
+    源码 = inspect.getsource(BacktestEngine.__init__)
+    assert "retrain_block" in 源码 and "rebalance_freq" in 源码, "必须支持新键并兼容旧键"
+
+
+def test_自检_能发现_unified_下失效的风控(monkeypatch):
+    from market_platform.predictor import 自检
+
+    monkeypatch.setattr(
+        自检, "get_config",
+        lambda: {
+            "portfolio": {"allocation_mode": "unified_sharpe"},
+            "backtest": {"strategy": {"stop_loss": 0.08, "take_profit": {"enabled": True}}},
+        },
+    )
+    问题 = 自检.检查统一夏普失效风控()
+    assert any("stop_loss" in p for p in 问题)
+    assert any("take_profit" in p for p in 问题)
+
+
+def test_自检_关闭的开关不报噪声(monkeypatch):
+    from market_platform.predictor import 自检
+
+    monkeypatch.setattr(
+        自检, "get_config",
+        lambda: {
+            "portfolio": {"allocation_mode": "unified_sharpe"},
+            "backtest": {"strategy": {"disagreement_gate": {"enabled": False}}},
+        },
+    )
+    assert 自检.检查统一夏普失效风控() == []
+
+
+def test_自检_能发现前视开关(monkeypatch):
+    from market_platform.predictor import 自检
+
+    monkeypatch.setattr(
+        自检, "get_config",
+        lambda: {
+            "model": {
+                "split": {"split_method": "cycle"},
+                "transformer": {"export_features": True, "export_walk_forward": False},
+            },
+            "backtest": {"strategy": {"stop_loss_uses_future_label": True}},
+            "data": {"macro_publish_lag_days": 0},
+        },
+    )
+    问题 = 自检.检查前视开关()
+    assert len(问题) >= 4, 问题
+
+
+def test_自检_默认配置下前视开关为空():
+    from market_platform.predictor import 自检
+
+    # 真实配置:切分已改 cycle_tail、走查已开、宏观滞后 15
+    assert 自检.检查前视开关() == [], "默认配置不应存在主动打开的前视开关"

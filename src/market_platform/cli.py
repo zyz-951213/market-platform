@@ -133,6 +133,13 @@ def _健康(argv: list[str] | None = None) -> int:
     return 1 if 失败 else 0
 
 
+def _自检(argv: list[str] | None = None) -> int:
+    """研究口径自检:前视开关与 unified 下失效的风控一览。"""
+    from market_platform.predictor.自检 import 打印自检
+
+    return 打印自检()
+
+
 def main(argv: list[str] | None = None) -> int:
     参数 = list(sys.argv[1:] if argv is None else argv)
     if not 参数 or 参数[0] in {"-h", "--help", "help"}:
@@ -150,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         return _指数预测(其余)
     if 域 in {"健康", "health", "doctor"}:
         return _健康(其余)
+    if 域 in {"自检", "lint", "检查"}:
+        return _自检(其余)
 
     print(f"未知域: {域}", file=sys.stderr)
     print(用法, file=sys.stderr)

@@ -68,7 +68,13 @@ class BacktestEngine:
         self.train_ratio = cfg.get("train_ratio", 0.7)
         self.test_start_date = cfg.get("test_start_date")
         self.min_train_bars = int(cfg.get("min_train_bars", 0))
-        self.rebalance_freq = cfg.get("rebalance_freq", 20)
+        # 命名修正(评审 R15):该值**不是调仓频率**,而是"重训/测试块长度"
+        # (每 N 根 bar 重训一次模型并预测整块)。真实调仓节奏由 weekly_rebalance_only /
+        # rebalance_on_week_end / interval_days 决定。旧键 rebalance_freq 继续兼容。
+        self.retrain_block = int(
+            cfg.get("retrain_block", cfg.get("rebalance_freq", 20))
+        )
+        self.rebalance_freq = self.retrain_block  # 兼容旧引用
         self.commission = cfg.get("commission", 0.0003)
         self.slippage = cfg.get("slippage", 0.0005)
         self.confidence_threshold = strategy.get("confidence_threshold", 0.6)
@@ -79,6 +85,14 @@ class BacktestEngine:
         self.min_hold_periods = strategy.get("min_hold_periods", 0)
         self.cooldown_periods = strategy.get("cooldown_periods", 0)
         self.stop_loss = strategy.get("stop_loss", None)
+        # 评审 R13:止损依据。False(默认)=用入场以来已实现回撤(因果);
+        # True=旧行为,用未来一期的 label_ret(前视,仅用于复现旧结果)
+        self.止损用未来标签 = bool(strategy.get("stop_loss_uses_future_label", False))
+        if self.止损用未来标签:
+            logger.warning(
+                "⚠️ stop_loss_uses_future_label=true:止损将使用未来一期收益(前视),"
+                "仅用于复现旧结果"
+            )
 
         # 连续仓位 + 部分调仓
         self.position_mode = strategy.get("position_mode", "scaled")
@@ -220,7 +234,18 @@ class BacktestEngine:
         self.partition_low_scale = float(part_cfg.get("low_scale", 0.50))
         self.partition_high_scale = float(part_cfg.get("high_scale", 1.15))
         self.partition_provider = provider
+        # 评审 R13:命中率来源。causal=只用当根之前已结算结果(默认);global=旧行为(有前视)
+        self.partition_overlay_source = str(part_cfg.get("source", "causal")).strip().lower()
         self._partition_hit_map: Dict[str, float] = {}
+        # 评审 R10/R11:失败丢弃与口径降级的显式记账(供指标与报告披露)
+        self.训练失败块数: int = 0
+        self.预测失败bar数: int = 0
+        self.丢弃bar数: int = 0
+        self.统一夏普降级原因: str | None = None
+        # 评审 R13:分桶命中率改为**因果账本**(只用当根之前已结算的预测结果)
+        self._分桶命中: Dict[str, int] = {}
+        self._分桶总数: Dict[str, int] = {}
+        self.因果分桶最小样本: int = int(part_cfg.get("min_n", cfg.get("partition_overlay_min_n", 20)))
 
         ret_cal_cfg = strategy.get("return_calibration", {})
         self.return_mapper = ConfidenceReturnMapper(ret_cal_cfg)
@@ -512,6 +537,33 @@ class BacktestEngine:
 
         return 0.0
 
+    def _记入分桶结果(self, max_conf: float, hit: bool) -> None:
+        """把已结算的预测结果记入分桶账本(因果:只影响之后的 bar)。"""
+        if not self.partition_overlay_enabled:
+            return
+        try:
+            from market_platform.predictor.接口.准确率分区 import _conf_bucket
+
+            bucket = str(_conf_bucket(float(max_conf)))
+        except Exception:  # noqa: BLE001
+            return
+        self._分桶总数[bucket] = self._分桶总数.get(bucket, 0) + 1
+        if hit:
+            self._分桶命中[bucket] = self._分桶命中.get(bucket, 0) + 1
+
+    def _因果分桶准确率(self, max_conf: float) -> float | None:
+        """该置信度桶**历史已结算**的命中率;样本不足返回 None。"""
+        try:
+            from market_platform.predictor.接口.准确率分区 import _conf_bucket
+
+            bucket = str(_conf_bucket(float(max_conf)))
+        except Exception:  # noqa: BLE001
+            return None
+        total = self._分桶总数.get(bucket, 0)
+        if total < self.因果分桶最小样本:
+            return None
+        return self._分桶命中.get(bucket, 0) / total
+
     def _ensure_partition_hit_map(self) -> None:
         if self._partition_hit_map or not self.partition_overlay_enabled:
             return
@@ -540,18 +592,30 @@ class BacktestEngine:
             logger.warning("分区叠加缩放加载失败: {}", exc)
 
     def _partition_overlay_multiplier(self, max_conf: float) -> float:
-        """按该渠道置信度桶历史命中率缩放加仓强度（B 实验）。"""
+        """按该渠道置信度桶命中率缩放加仓强度(B 实验)。
+
+        前视修正(评审 R13):原实现用 `compute_accuracy_partitions()` 的**全历史**命中率,
+        等于用未来才知道的准确率去调过去的仓位。现默认走**因果账本**(只用当根之前
+        已结算的预测);`partition_overlay_source: global` 保留旧行为但会大声告警。
+        """
         if not self.partition_overlay_enabled:
             return 1.0
-        self._ensure_partition_hit_map()
-        if not self._partition_hit_map:
-            return 1.0
-        try:
-            from market_platform.predictor.接口.准确率分区 import _conf_bucket
-            bucket = _conf_bucket(float(max_conf))
-        except Exception:
-            return 1.0
-        acc = self._partition_hit_map.get(bucket)
+        if self.partition_overlay_source == "global":
+            logger.warning(
+                "⚠️ partition_overlay_source=global 会使用全历史命中率(含未来信息),"
+                "仅用于复现旧结果;因果模式请设为 causal"
+            )
+            self._ensure_partition_hit_map()
+            if not self._partition_hit_map:
+                return 1.0
+            try:
+                from market_platform.predictor.接口.准确率分区 import _conf_bucket
+                bucket = _conf_bucket(float(max_conf))
+            except Exception:
+                return 1.0
+            acc = self._partition_hit_map.get(bucket)
+        else:
+            acc = self._因果分桶准确率(max_conf)
         if acc is None:
             return 1.0
         if acc < self.partition_low_acc:
@@ -1186,7 +1250,12 @@ class BacktestEngine:
             from market_platform.predictor.分析.资金.闲置管理 import is_unified_sharpe_mode
 
             unified_mode = is_unified_sharpe_mode()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — 必须留痕:此前静默回退 legacy(评审 R11)
+            logger.error(
+                "❌ 统一夏普模式探测失败,本次按 legacy 口径回测: %s: %s",
+                type(exc).__name__, exc,
+            )
+            self.统一夏普降级原因 = f"模式探测失败: {type(exc).__name__}: {exc}"
             unified_mode = False
 
         if unified_mode:
@@ -1205,7 +1274,11 @@ class BacktestEngine:
                     f"📐 统一夏普六袖已启用，预加载 {len(sleeve_returns)} 条六袖收益数据"
                 )
             except Exception as e:
-                logger.warning(f"⚠️ 统一夏普六袖初始化失败，回退 legacy: {e}")
+                logger.error(
+                    "❌ 统一夏普六袖初始化失败,本次回测按 legacy 口径执行(结果口径与"
+                    "配置声明不一致,请勿与 unified 结果混比): %s", e
+                )
+                self.统一夏普降级原因 = f"初始化失败: {type(e).__name__}: {e}"
                 unified_mode = False
                 unified_allocator = None
                 sleeve_returns = None
@@ -1278,14 +1351,18 @@ class BacktestEngine:
 
         while current_train_end < total_len:
             test_start = current_train_end
-            test_end = min(current_train_end + self.rebalance_freq, total_len)
+            test_end = min(current_train_end + self.retrain_block, total_len)
             train_df = df.iloc[:current_train_end]
             test_df = df.iloc[test_start:test_end]
 
             try:
                 model = train_fn(train_df)
             except Exception as e:
-                logger.error(f"❌ 训练失败: {e}")
+                # 评审 R10:失败即丢样本会**静默**缩短样本外期数,直接扭曲年化/Sharpe/回撤。
+                # 这里显式记账(块数 + 根数),并进入指标供报告披露。
+                logger.error(f"❌ 训练失败(该块 {test_end - test_start} 根 bar 不计入收益序列): {e}")
+                self.训练失败块数 += 1
+                self.丢弃bar数 += max(0, test_end - current_train_end)
                 current_train_end = test_end
                 continue
 
@@ -1324,7 +1401,10 @@ class BacktestEngine:
                     else:
                         pred, proba, week_pred = last_pred, last_proba, last_week_pred
                 except Exception as e:
-                    logger.warning(f"⚠️ 预测失败: {e}")
+                    # 评审 R10:单 bar 预测失败同样要记账(此前静默丢样本)
+                    logger.warning(f"⚠️ 预测失败(该 bar 不计入序列): {e}")
+                    self.预测失败bar数 += 1
+                    self.丢弃bar数 += 1
                     continue
 
                 p_down, p_flat, p_up = self._parse_proba(proba)
@@ -1482,15 +1562,31 @@ class BacktestEngine:
                     actual_dir = row.get("label_direction")
                     if pd.notna(actual_dir):
                         self._record_pred_outcome(raw_pred, int(actual_dir), max_conf)
+                        self._记入分桶结果(max_conf, int(int(sizing_pred) == int(actual_dir)))
                     continue
 
                 # 周度止损：持仓期单周跌幅超过阈值则强制平仓
-                forced_exit = (
-                    position > 0
-                    and not pd.isna(label_ret)
-                    and self.stop_loss is not None
-                    and label_ret <= -abs(self.stop_loss)
-                )
+                # 前视修正(评审 R13):原实现用 label_ret(t→t+1 的**未来**收益)判止损。
+                # 现默认改用"入场以来的**已实现**回撤";旧行为可用
+                # backtest.stop_loss_uses_future_label=true 复现(会大声告警)。
+                if self.止损用未来标签:
+                    forced_exit = (
+                        position > self.trade_epsilon
+                        and not pd.isna(label_ret)
+                        and self.stop_loss is not None
+                        and label_ret <= -abs(self.stop_loss)
+                    )
+                else:
+                    _已实现 = (
+                        (float(equity) / float(entry_equity) - 1.0)
+                        if (entry_equity and float(entry_equity) > 0)
+                        else 0.0
+                    )
+                    forced_exit = (
+                        position > self.trade_epsilon
+                        and self.stop_loss is not None
+                        and _已实现 <= -abs(self.stop_loss)
+                    )
 
                 target = self._resolve_target_position(sizing_pred, proba, edge_history, row=row)
                 regime_base = self._resolve_base_position(sizing_pred, max_conf=max_conf, row=row)
@@ -1649,6 +1745,7 @@ class BacktestEngine:
                 actual_dir = row.get("label_direction")
                 if pd.notna(actual_dir):
                     self._record_pred_outcome(raw_pred, int(actual_dir), max_conf)
+                    self._记入分桶结果(max_conf, int(int(sizing_pred) == int(actual_dir)))
 
             current_train_end = test_end
             logger.info(f"  回测进度: {test_end}/{total_len} ({test_end/total_len*100:.0f}%)")
@@ -1797,6 +1894,21 @@ class BacktestEngine:
             result.equal_six_return = equal_six - 1.0  # type: ignore[attr-defined]
         else:
             result.allocation_mode = "legacy"  # type: ignore[attr-defined]
+
+        # 评审 R10/R11:把"失败丢弃"与"口径降级"显式挂到结果上(供存储层/报告披露,
+        # 避免静默缩短样本外期数或口径悄悄变化)
+        result.训练失败块数 = self.训练失败块数  # type: ignore[attr-defined]
+        result.预测失败bar数 = self.预测失败bar数  # type: ignore[attr-defined]
+        result.丢弃bar数 = self.丢弃bar数  # type: ignore[attr-defined]
+        result.统一夏普降级原因 = self.统一夏普降级原因  # type: ignore[attr-defined]
+        if self.训练失败块数 or self.预测失败bar数:
+            logger.warning(
+                "⚠️ 本次回测丢弃样本: 训练失败块=%d(共 %d 根 bar 未计入序列), 预测失败 bar=%d;"
+                "年化/Sharpe/回撤均基于剩余期数计算",
+                self.训练失败块数, self.丢弃bar数, self.预测失败bar数,
+            )
+        if self.统一夏普降级原因:
+            logger.error("❌ 本次回测口径已降级: %s", self.统一夏普降级原因)
         logger.info(f"  策略夏普比率:    {result.sharpe_ratio:.4f}")
         logger.info(f"  策略最大回撤:    {result.max_drawdown:.4f}")
         if result.cash_mgmt_enabled and result.cash_return is not None:
