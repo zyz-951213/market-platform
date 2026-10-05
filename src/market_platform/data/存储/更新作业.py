@@ -237,10 +237,31 @@ def _resolve_targets(targets, tags, all_schedulable, only_stale) -> list[dict]:
             return [i for i in items if resolve(i["更新函数"])]
 
 
+def 判定明细状态(*, 有水位列: bool, 水位前: object, 水位后: object, 是否推进: bool | None) -> str:
+    """按**证据**判定单项更新状态(评审 D3)。
+
+    历史实现无论结果如何都写 "成功",导致"水位没推进"甚至"数据源黑名单"也显示成功。
+    现规则:
+      · 无水位列(配置/派生类数据集) → "成功"
+      · 有水位列且水位推进 → "成功"
+      · 有水位列、有前值、但水位没推进 → "未推进"(不再伪装成功)
+      · 有水位列但取不到前后值 → "未知"
+    """
+    if not 有水位列:
+        return "成功"
+    if 是否推进 is True:
+        return "成功"
+    if 水位前 is not None and 水位后 is not None:
+        return "未推进"
+    return "未知"
+
+
 def _run_job(job_id: str) -> None:
     global _running_job
     updater = DataUpdater(DB_NAME, DSN)
     ok = fail = skip = 0
+    # 评审 D3:状态不再恒为「成功」;水位未推进要单独记账(此前被算作成功)
+    未推进 = 0
     try:
         with psycopg.connect(DSN) as conn:
             with conn.cursor() as cur:
@@ -332,10 +353,18 @@ def _run_job(job_id: str) -> None:
                         advanced = True
                     else:
                         advanced = False
-                    status = "成功"
+                    # 评审 D3:状态由**证据**决定(见 判定明细状态),不再恒为「成功」
+                    status = 判定明细状态(
+                        有水位列=bool(date_col),
+                        水位前=before,
+                        水位后=after,
+                        是否推进=advanced,
+                    )
                     note = f"{msg}{note_wm}"
-                    if advanced is False and before is not None:
-                        note = f"{note}（水位未推进）"
+                    if status == "未推进":
+                        note = f"{note}（水位未推进: 仍停在 {after}）"
+                    elif status == "未知":
+                        note = f"{note}（无法判定水位是否推进）"
                     elapsed = (datetime.now() - t0).total_seconds()
                     with conn.cursor() as cur:
                         cur.execute(
@@ -347,16 +376,20 @@ def _run_job(job_id: str) -> None:
                             ''',
                             (status, elapsed, note[:2000], after, advanced, job_id, src, ds),
                         )
-                        cur.execute(
-                            '''
-                            UPDATE "行情增量"."同步水位"
-                            SET "最近成功时间"=now(), "最近运行编号"=%s::uuid
-                            WHERE "数据源"=%s AND "数据集"=%s
-                            ''',
-                            (job_id, src, ds),
-                        )
+                        if status == "成功":
+                            cur.execute(
+                                '''
+                                UPDATE "行情增量"."同步水位"
+                                SET "最近成功时间"=now(), "最近运行编号"=%s::uuid
+                                WHERE "数据源"=%s AND "数据集"=%s
+                                ''',
+                                (job_id, src, ds),
+                            )
                     conn.commit()
-                ok += 1
+                if status == "成功":
+                    ok += 1
+                else:
+                    未推进 += 1  # 含「未推进」与「未知」
             except Exception as e:
                 fail += 1
                 err = f"{type(e).__name__}: {e}"
@@ -374,7 +407,14 @@ def _run_job(job_id: str) -> None:
                         )
                     conn.commit()
 
-        final = "成功" if fail == 0 else ("失败" if ok == 0 else "部分失败")
+        if fail == 0 and 未推进 == 0:
+            final = "成功"
+        elif fail == 0:
+            final = "未推进"          # 无失败但全部/部分没推进:不能报成功
+        elif ok == 0 and 未推进 == 0:
+            final = "失败"
+        else:
+            final = "部分失败"
         with psycopg.connect(DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -390,7 +430,7 @@ def _run_job(job_id: str) -> None:
                         ok,
                         fail,
                         skip,
-                        Json({"ok": ok, "fail": fail, "skip": skip}),
+                        Json({"ok": ok, "fail": fail, "skip": skip, "未推进": 未推进}),
                         job_id,
                     ),
                 )

@@ -2,6 +2,7 @@
 """修复前复权脏数据：多轮清洗全市场 → 残留异常票 sina 优先重拉 → 重分析。"""
 
 from __future__ import annotations
+from market_platform.agents.脚本.运维.安全护栏 import 加入安全参数, 破坏性操作护栏
 
 import argparse
 import logging
@@ -48,7 +49,12 @@ def list_extreme_symbols(st: PostgresStore) -> pd.DataFrame:
     )
 
 
-def resanitize_all(st: PostgresStore, symbols: list[str] | None = None) -> tuple[int, list[str]]:
+def resanitize_all(
+    st: PostgresStore,
+    symbols: list[str] | None = None,
+    *,
+    护栏=None,
+) -> tuple[int, list[str]]:
     """对日线再跑加强清洗并整表替换。返回 (改写只数, 仍异常代码)。"""
     if symbols is None:
         syms = st._read_sql(
@@ -78,6 +84,13 @@ def resanitize_all(st: PostgresStore, symbols: list[str] | None = None) -> tuple
             still_bad.append(sym)
             continue
         if len(clean) != before or before_stats["n50"] or before_stats["n30"]:
+            # 评审 D9:整表写回(replace=True)不可逆,必须经过 dry-run/确认护栏
+            if 护栏 is not None and 护栏.拦截(
+                动作=f"整表写回 行为分析.日行情(replace=True): {sym} 原 {before} 行 → {len(clean)} 行",
+                影响="该标的全部日线被替换,后续重分析基于新数据",
+            ):
+                changed += 1
+                continue
             store.save_daily_bars(sym, clean, replace=True)
             if len(clean) != before or before_stats["n50"] > after_stats["n50"]:
                 changed += 1
@@ -159,6 +172,7 @@ def refetch_sina_first(config: AppConfig, symbols: list[str]) -> tuple[int, int]
 
 def reanalyze(config: AppConfig, symbols: list[str], batch_size: int = 20) -> tuple[int, int]:
     st = PostgresStore(load_database_settings())
+    # 护栏在下方创建后传入 resanitize_all(见调用处)
     names = st._read_sql(
         """
         SELECT 证券代码 AS symbol, 证券简称 AS name, 所属行业 AS sector,
@@ -229,8 +243,10 @@ def main() -> None:
     parser.add_argument("--all-symbols", action="store_true", help="全市场日线再清洗")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=20)
+    加入安全参数(parser)   # 评审 D9:破坏性操作必须可 dry-run 且需显式确认
     args = parser.parse_args()
 
+    护栏 = 破坏性操作护栏(脚本名="修复前复权", dry_run=args.dry_run, confirmed=args.yes)
     st = PostgresStore(load_database_settings())
     config = AppConfig.from_yaml(args.config)
     config.data.start_date = config.data.resolved_start_date()
@@ -244,10 +260,10 @@ def main() -> None:
 
     if not args.skip_resanitize:
         if args.all_symbols:
-            changed, still = resanitize_all(st, None)
+            changed, still = resanitize_all(st, None, 护栏=护栏)
             touch_syms |= set(still)
         else:
-            changed, still = resanitize_all(st, sorted(touch_syms))
+            changed, still = resanitize_all(st, sorted(touch_syms), 护栏=护栏)
         logger.info("Resanitize done: changed=%d still_bad=%d", changed, len(still))
         touch_syms |= set(still)
     else:

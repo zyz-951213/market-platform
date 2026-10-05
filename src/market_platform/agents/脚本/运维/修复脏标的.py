@@ -2,6 +2,7 @@
 """清理净值/状态/特征中无日线对齐的孤儿行，并对问题标的重拉日线 + 重分析。"""
 
 from __future__ import annotations
+from market_platform.agents.脚本.运维.安全护栏 import 加入安全参数, 破坏性操作护栏
 
 import argparse
 import logging
@@ -110,12 +111,18 @@ def main() -> None:
     parser.add_argument("--refetch-extreme-only", action="store_true", default=True)
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--limit", type=int, default=None)
+    加入安全参数(parser)   # 评审 D9:破坏性操作必须可 dry-run 且需显式确认
     args = parser.parse_args()
 
     st = PostgresStore(load_database_settings())
+    护栏 = 破坏性操作护栏(脚本名="修复脏标的", dry_run=args.dry_run, confirmed=args.yes)
     if not args.skip_delete:
-        counts = delete_orphans(st)
-        logger.info("Orphan cleanup done: %s", counts)
+        if not 护栏.拦截(
+            动作="删除孤立行情行(DELETE FROM 行为分析.策略净值/参与者活跃度/分钟日特征)",
+            影响="孤立子表行;后续整表写回 行为分析.日行情",
+        ):
+            counts = delete_orphans(st)
+            logger.info("Orphan cleanup done: %s", counts)
 
     report = load_problem_symbols(args.report)
     if report.empty:

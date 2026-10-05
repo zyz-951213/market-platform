@@ -173,27 +173,87 @@ def default_strategy(schema: str, table: str) -> str:
     return "人工"
 
 
+def 取登记信息(conn, schema: str, table: str) -> dict[str, Any] | None:
+    """取该数据集的登记信息(与控制台视图同源:登记表锚点 + 发布滞后)。
+
+    评审 D5:此前扫描脚本用「距今>10 天」粗判,导致同一天同一张表在
+    `同步水位.状态` 与管理台「新鲜度」里结论相反。现两者共用 DB 函数
+    `行情增量.期望最后日`。
+
+    返回 None 表示**未登记**;返回 dict 且 `期望最后日` 为 None 表示
+    **已登记但没有期望锚点**(视图里对应状态 '未知')。
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT r."期望锚点", r."发布滞后天数",
+                       行情增量.期望最后日(r."期望锚点", r."发布滞后天数"),
+                       COALESCE(r."是否启用", true), COALESCE(r."可调度", false)
+                FROM 行情增量.数据集登记 r
+                WHERE r."数据源" = %s AND r."数据集" = %s
+                ''',
+                (schema, table),
+            )
+            行 = cur.fetchone()
+        if not 行:
+            return None
+        return {
+            "期望锚点": 行[0],
+            "发布滞后天数": 行[1],
+            "期望最后日": 行[2],
+            "是否启用": bool(行[3]),
+            "可调度": bool(行[4]),
+        }
+    except Exception:  # noqa: BLE001 — 登记缺失/函数不存在时退回粗判
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
 def classify_status(
     strategy: str,
     n: int | None,
     d1: date | None,
     d0: date | None,
+    期望最后日: date | None = None,
+    已登记: bool = False,
+    启用: bool = True,
+    可调度: bool = True,
 ) -> str:
     if n is None:
         return "扫描失败"
     if n == 0:
         return "空表"
+    # 与控制台视图 行情增量.更新控制台 的判定**逐条对齐**(评审 D5):
+    #   已停用 → 冻结 → 不可调度 → 未知(无期望锚点) → 无数据 → 已对齐 → 可更新
+    if 已登记 and not 启用:
+        return "已停用"
     if strategy == "冻结":
         return "冻结"
-    if strategy == "派生":
-        return "派生"
+    if 已登记 and not 可调度:
+        return "不可调度"
     if d1 is None:
-        return "无日期水位"
-    # 粗：最后日距今天超过 10 天标滞后（交易日历未精细化）
+        # 未登记或不可调度的对象仍标明"无日期水位"以便定位;已登记者按视图口径给"未知"
+        return "未知" if 已登记 else "无日期水位"
+    # 口径统一(评审 D5):与 行情增量.更新控制台 视图使用**同一个**判定 ——
+    # 期望最后日(期望锚点, 发布滞后天数) vs 数据最后日。调用方通过
+    # 期望最后日参数把 DB 函数的结果传进来,避免两套口径互相矛盾。
+    if 已登记 and 期望最后日 is None:
+        # 已登记但锚点为「无」:与视图的 '未知' 等价(视图顺序在"无数据"之前)
+        return "未知"
+    if 期望最后日 is not None:
+        if d1 >= 期望最后日:
+            return "已对齐"
+        落后 = (期望最后日 - d1).days
+        return f"可更新(落后{落后}天)"
+    # 完全未登记的数据集:退化为粗判,并显式标注"未登记"
     lag = (date.today() - d1).days
     if strategy == "增量" and lag > 10:
-        return f"疑似滞后({lag}天)"
-    return "正常"
+        return f"未登记·疑似滞后({lag}天)"
+    return "未登记·正常"
 
 
 def fetch_relations(conn) -> list[dict[str, Any]]:
@@ -376,7 +436,17 @@ def main(argv: list[str] | None = None) -> int:
             )
 
             m = measure(conn, schema, table, date_col, int(rel["bytes"]))
-            status = classify_status(strategy, m["行数"], m["最后日"], m["最早日"])
+            登记 = 取登记信息(conn, schema, table)
+            status = classify_status(
+                strategy,
+                m["行数"],
+                m["最后日"],
+                m["最早日"],
+                期望最后日=(登记 or {}).get("期望最后日"),
+                已登记=登记 is not None,
+                启用=(登记 or {}).get("是否启用", True),
+                可调度=(登记 or {}).get("可调度", True),
+            )
             if m["error"]:
                 status = "扫描失败"
                 note = (note + "; " if note else "") + m["error"][:200]
