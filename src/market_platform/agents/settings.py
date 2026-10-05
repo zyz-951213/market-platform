@@ -130,6 +130,10 @@ class NMFConfig:
     n_components: int = 5
     max_iter: int = 500
     random_state: int = 42
+    # point-in-time 追加式分解(评审 R4):历史活跃度保持原值,只算新增行;
+    # 新增行数达到 refit_every_rows 时,仅用"历史窗口"重拟合基,不触碰历史行。
+    append_only: bool = True
+    refit_every_rows: int = 250
 
 
 @dataclass

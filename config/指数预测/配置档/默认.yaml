@@ -2,6 +2,17 @@
 # 通过 hydra / yaml 读取，也可用 python dict
 
 data:
+  # ── 月频宏观指标的发布滞后(前视修正 R3)──────────────────────────
+  # 指标所属期结束后多少天才真正可见:M2/PPI/社融等为次月 9~15 日发布,
+  # 故默认 +15 天;PMI 于月末当天发布,单列覆盖为 +1。
+  # 0 = 关闭(退化为旧行为:月初即可见,属前视,不建议)。
+  macro_publish_lag_days: 15
+  macro_publish_lag_overrides:
+    pmi_mfg: 1
+    pmi_non_mfg: 1
+    lpr_1y: 20      # LPR 每月 20 日公布
+    lpr_5y: 20
+
   # 标的代码（tushare/akshare 格式）
   index_code: "000300.SH"        # 沪深300
   # index_code: "000001.SH"     # 上证综指
@@ -247,7 +258,10 @@ features:
 model:
   split:
     val_ratio: 0.2               # 验证集目标占比
-    split_method: "cycle"         # temporal=时间末尾 | cycle=按牛熊震荡周期
+    split_method: "cycle_tail"    # temporal=时间末尾 | cycle_tail=取末尾完整周期段(因果) | cycle=旧行为(有前视,不推荐)
+    # 说明:原默认值 "cycle" 会把验证集取成历史上零散的牛/熊/震荡片段,
+    # 导致训练集包含验证期之后的数据(时间泄漏)。改为 cycle_tail:
+    # 仍按周期切分,但验证集只取**历史末尾**的连续周期段,保证训练集严格早于验证集。
     cycle:
       trend_window: 120           # 长期趋势均线窗口
       momentum_window: 60         # 动量计算窗口
@@ -260,6 +274,14 @@ model:
     enabled: true                # 量价通道：需存在检查点 transformer_model.pt
     export_features: true
     mode: "single"               # 单尺度最优
+
+    # ── tf_proba_* 生成方式(前视修正)────────────────────────────────
+    # 走查:每块先用"该块之前"的数据重训,再预测本块 ⇒ 每一行都是样本外概率。
+    # 关闭走查则只填 checkpoint 训练结束日之后的行,其余留空(绝不给样本内数字)。
+    export_walk_forward: true
+    export_retrain_every: 120    # 走查块长(根):每 120 根重训一次
+    export_min_train_rows: 750   # 最小训练行数(约 3 年日线),之前一律留空
+    seed: 42                     # 随机种子(逐块派生 seed+块序号,可复现)
 
     seq_len: 20
     feature_cols:

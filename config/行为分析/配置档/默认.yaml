@@ -11,6 +11,10 @@ nmf:
   n_components: 5
   max_iter: 500
   random_state: 42
+  # point-in-time 追加式分解(评审 R4):历史活跃度保持原值,只算新增行,
+  # 避免"每次增量重拟合把历史状态改写"导致历史不可复现。
+  append_only: true
+  refit_every_rows: 250     # 新增行达到该数量时,仅用历史窗口重拟合基(不动历史行)
 
 features:
   minute:

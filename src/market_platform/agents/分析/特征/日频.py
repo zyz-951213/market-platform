@@ -148,20 +148,43 @@ def feature_matrix_to_array(df: pd.DataFrame) -> tuple[np.ndarray, list[str], pd
     return X, feature_cols, meta
 
 
-def normalize_feature_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-    """对 NMF 输入做 log1p + 列归一化，缓解量纲差异。"""
+def normalize_feature_matrix(
+    df: pd.DataFrame,
+    *,
+    归一方式: str | None = None,
+) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    """对 NMF 输入做 log1p + 列归一化，缓解量纲差异。
+
+    **前视修正(评审 R5)**:历史实现用**全样本列 max** 归一,等于把未来信息带进
+    每一行输入。现默认改为**扩展窗口(expanding)**:第 t 行只用第 1..t 行的最大值
+    归一 —— 严格因果,不改 log1p 语义。
+
+    归一方式:
+      expanding(默认) — 逐行扩展窗口最大归一(因果)
+      full           — 旧行为:全样本最大归一(有前视,仅用于复现旧结果)
+    """
     feature_cols = [c for c in NMF_FEATURE_COLUMNS if c in df.columns]
     meta_cols = [c for c in ["date", "symbol"] if c in df.columns]
 
+    方式 = (归一方式 or "expanding").strip().lower()
     scaled = df[feature_cols].astype(float).copy()
     scaled = np.log1p(scaled)
 
     scales: dict[str, np.ndarray] = {}
-    for col in feature_cols:
-        col_max = scaled[col].max()
-        if col_max > 0:
-            scaled[col] = scaled[col] / col_max
-        scales[col] = np.array([col_max if col_max > 0 else 1.0])
+    if 方式 == "full":
+        for col in feature_cols:
+            col_max = scaled[col].max()
+            if col_max > 0:
+                scaled[col] = scaled[col] / col_max
+            scales[col] = np.array([col_max if col_max > 0 else 1.0])
+    else:
+        # 扩展窗口:分母 = 截至当前行的历史最大值(无正值时用 1 避免除零)
+        for col in feature_cols:
+            列 = scaled[col]
+            累积最大 = 列.cummax()
+            分母 = 累积最大.where(累积最大 > 0, 1.0)
+            scaled[col] = 列 / 分母
+            scales[col] = 分母.to_numpy()
 
     out = df[meta_cols].copy()
     out[feature_cols] = scaled

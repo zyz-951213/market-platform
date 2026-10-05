@@ -17,6 +17,7 @@ from market_platform.agents.分析.推断.矩阵分解 import (
     apply_agent_role_names,
     decompose_agent_activity,
     label_dominant_features,
+    追加式分解,
 )
 from market_platform.agents.分析.推断.隐马尔可夫 import attach_forward_returns, classify_with_hmm
 from market_platform.agents.存储 import data_access as store
@@ -201,7 +202,9 @@ def run_symbol_analysis_from_cache(
     if feature_matrix.empty or minute_daily.empty:
         raise FileNotFoundError(f"未找到标的 {symbol} 的特征数据")
 
-    nmf_result = decompose_agent_activity(feature_matrix, config.nmf)
+    # point-in-time 追加式分解(评审 R4):历史活跃度保持原值,只算新增行,
+    # 避免"每次增量重拟合导致历史状态被改写"。开关见 state/nmf 配置。
+    nmf_result = _分解行为活跃度(sym, feature_matrix, config, store)
     nmf_result, name_map = apply_agent_role_names(nmf_result)
     labels = label_dominant_features(nmf_result.patterns, name_map)
     store.save_nmf_outputs(sym, nmf_result.activity, nmf_result.patterns, agent_names=name_map, labels=labels)
@@ -474,3 +477,29 @@ def analyze_status(data_root: Path, output_root: Path) -> dict:
         "sector_count": int(sector_map["sector"].nunique()) if not sector_map.empty and "sector" in sector_map.columns else 0,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
+
+def _分解行为活跃度(sym: str, feature_matrix, config, store):
+    """按配置选择分解方式:追加式(默认,point-in-time)或全窗口重拟合(旧行为)。
+
+    评审 R4:历史实现在每次增量分析时对整窗 `fit_transform`,同一根 K 线的活跃度会被
+    后续数据改写。默认走追加式(历史行保持原值,只算新增行);置
+    `nmf.append_only: false` 可退回旧行为(仅用于复现旧结果)。
+    """
+    if not bool(getattr(config.nmf, "append_only", True)):
+        return decompose_agent_activity(feature_matrix, config.nmf)
+
+    已有活跃度 = None
+    已有模式 = None
+    try:
+        已有活跃度 = store.load_agent_activity(sym)
+        已有模式 = store.load_agent_patterns(sym)
+    except Exception as exc:  # noqa: BLE001 — 无历史输出时退化为首跑分解
+        logger.info("无历史 NMF 输出(%s),按首跑分解: %s", type(exc).__name__, sym)
+
+    return 追加式分解(
+        feature_matrix,
+        config.nmf,
+        已有活跃度=已有活跃度,
+        已有模式=已有模式,
+        重拟合阈值=int(getattr(config.nmf, "refit_every_rows", 250)),
+    )

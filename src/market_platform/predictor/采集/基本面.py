@@ -256,12 +256,48 @@ def _load_cached(path_suffix: str) -> pd.DataFrame | None:
     return load_series_df(path_suffix)
 
 
-def _expand_monthly_to_daily(monthly: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+def _宏观发布滞后(列: str) -> int:
+    """列级发布滞后(天):月频指标在**期末之后**多少天才真正可见。
+
+    前视修正(评审 R3):历史实现把"2024年3月"解析为 03-01 后直接 ffill,
+    等于月初就使用当月数据;而 M2/PPI/PMI/社融等实际在次月 9~15 日发布。
+    同包财报侧已按 `report_date + 45 天` 处理,这里补齐同一口径。
+    """
+    cfg = get_config().get("data", {}) or {}
+    默认 = int(cfg.get("macro_publish_lag_days", 15))
+    覆盖 = cfg.get("macro_publish_lag_overrides") or {}
+    if isinstance(覆盖, dict) and 列 in 覆盖:
+        return int(覆盖[列])
+    return 默认
+
+
+def _expand_monthly_to_daily(
+    monthly: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    发布滞后天: int = 0,
+    列滞后: dict[str, int] | None = None,
+) -> pd.DataFrame:
+    """月频序列展开为日频:值只在「期末 + 发布滞后」之后可见,且**不向前回填**。
+
+    `发布滞后天=0` 时退化为旧行为(月初即可见);调用方按列传滞后见 `_宏观发布滞后`。
+    """
     value_cols = [c for c in monthly.columns if c != "date"]
     daily_index = pd.date_range(start, end, freq="D")
-    daily = monthly.set_index("date")[value_cols].sort_index()
-    daily = daily.reindex(daily_index.union(daily.index)).sort_index().ffill()
-    return daily.reindex(daily_index).reset_index().rename(columns={"index": "date"})
+    m = monthly.copy()
+    m["date"] = pd.to_datetime(m["date"])
+    列滞后 = 列滞后 or {}
+    期末 = m["date"] + pd.offsets.MonthEnd(0)
+
+    结果 = pd.DataFrame(index=daily_index)
+    for col in value_cols:
+        滞后 = int(列滞后.get(col, 发布滞后天))
+        可见日 = pd.DatetimeIndex(期末 + pd.Timedelta(days=滞后))
+        序列 = pd.Series(m[col].to_numpy(), index=可见日).sort_index()
+        序列 = 序列[~序列.index.duplicated(keep="last")]
+        结果[col] = 序列.reindex(daily_index.union(序列.index)).ffill().reindex(daily_index)
+    return 结果.reset_index().rename(columns={"index": "date"})
 
 
 def _merge_on_date(df: pd.DataFrame, extra: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
@@ -314,9 +350,14 @@ def merge_fundamental_data(df: pd.DataFrame) -> pd.DataFrame:
                 logger.warning(f"⚠️ 宏观数据获取失败: {e}")
                 macro = None
         if macro is not None:
-            macro_daily = _expand_monthly_to_daily(macro, start, end)
+            列滞后 = {c: _宏观发布滞后(c) for c in macro.columns if c != "date"}
+            macro_daily = _expand_monthly_to_daily(macro, start, end, 列滞后=列滞后)
             df = _merge_on_date(df, macro_daily, MACRO_RAW_COLUMNS)
-            logger.info(f"🔗 宏观流动性: {df['m2_yoy'].notna().sum()}/{len(df)} 日有数据")
+            滞后说明 = "、".join(f"{k}+{v}天" for k, v in sorted(列滞后.items()))
+            logger.info(
+                f"🔗 宏观流动性(按发布滞后可见: {滞后说明}): "
+                f"{df['m2_yoy'].notna().sum()}/{len(df)} 日有数据"
+            )
 
     if sources.get("margin", False) and _needs_any(raw_factors, MARGIN_RAW_COLUMNS):
         margin = _load_cached("margin_sse.parquet")

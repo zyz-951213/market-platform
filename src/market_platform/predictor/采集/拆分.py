@@ -131,6 +131,78 @@ def _select_cycle_holdout_segments(
     return selected
 
 
+def cycle_tail_train_val_split(
+    df: pd.DataFrame,
+    val_ratio: float,
+    trend_window: int = 120,
+    momentum_window: int = 60,
+    bull_threshold: float = 0.03,
+    bear_threshold: float = -0.03,
+    min_segment_days: int = 20,
+) -> Tuple[pd.DataFrame, pd.DataFrame, List[MarketSegment]]:
+    """按市场周期切分,但**验证集只取历史末尾的连续周期段**(因果安全)。
+
+    与旧 `cycle_train_val_split` 的差别(修正时间泄漏):
+    - 旧实现:各类状态各挑一个"最近"的完整周期段,这些段散落在历史各处,
+      于是训练集里包含验证期**之后**的数据 → 前视泄漏。
+    - 本实现:从最后一个周期段往前累加,直到达到目标规模;验证集是历史的**连续后缀**,
+      训练集严格早于验证集,同时仍保留"按牛熊震荡周期取样"的意图。
+
+    返回 (train_df, val_df, holdout_segments);无法切分时回退到时间末尾切分。
+    """
+    if not 0 < val_ratio < 1:
+        raise ValueError(f"val_ratio 需在 (0, 1) 之间，当前: {val_ratio}")
+
+    df = df.sort_values("date").reset_index(drop=True)
+    regime = detect_market_regime(
+        df,
+        trend_window=trend_window,
+        momentum_window=momentum_window,
+        bull_threshold=bull_threshold,
+        bear_threshold=bear_threshold,
+    )
+    segments = _build_segments(regime, df["date"], min_segment_days)
+    if not segments:
+        logger.warning("⚠️ 未识别到足够长的市场周期，回退到时间末尾切分")
+        train_df, val_df = temporal_train_val_split(df, val_ratio)
+        return train_df, val_df, []
+
+    target_size = int(len(df) * val_ratio)
+    # 只从末尾往前取:保证被选段落在时间上是连续后缀(段之间可有更早的段被跳过,
+    # 因此这里要求"从最后一个段起连续累加",一旦跳过就不再回头取更早的段)。
+    selected: List[MarketSegment] = []
+    current_size = 0
+    for seg in reversed(segments):
+        selected.append(seg)
+        current_size += seg.length
+        if current_size >= target_size:
+            break
+
+    if not selected:
+        train_df, val_df = temporal_train_val_split(df, val_ratio)
+        return train_df, val_df, []
+
+    selected.sort(key=lambda s: s.start_idx)
+    val_mask = np.zeros(len(df), dtype=bool)
+    for seg in selected:
+        val_mask[seg.start_idx : seg.end_idx + 1] = True
+
+    val_df = df.loc[val_mask].reset_index(drop=True)
+    train_df = df.loc[~val_mask].reset_index(drop=True)
+    if train_df.empty or val_df.empty:
+        logger.warning("⚠️ 周期切分导致训练/验证为空，回退到时间末尾切分")
+        train_df, val_df = temporal_train_val_split(df, val_ratio)
+        return train_df, val_df, []
+
+    # 因果校验:训练集最后一日必须早于验证集第一日
+    if train_df["date"].max() > val_df["date"].min():
+        logger.warning("⚠️ 检测到训练集跨越验证集起点，回退到时间末尾切分以保证因果")
+        train_df, val_df = temporal_train_val_split(df, val_ratio)
+        return train_df, val_df, []
+
+    return train_df, val_df, selected
+
+
 def temporal_train_val_split(df: pd.DataFrame, val_ratio: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """按时间顺序切分（验证集取末尾）"""
     if not 0 < val_ratio < 1:
@@ -202,24 +274,37 @@ def train_val_split(
     split_method: Optional[str] = None,
     cycle_cfg: Optional[dict] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[MarketSegment]]:
-    """统一入口：根据配置选择切分方式"""
+    """统一入口：根据配置选择切分方式
+
+    split_method:
+      temporal    — 时间末尾切分(默认,最保守)
+      cycle_tail  — 按周期切分但验证集只取末尾连续周期段(因果安全)
+      cycle       — 旧行为:验证集取历史上零散周期段(**有前视泄漏,不推荐**,仅兼容旧实验)
+    """
     cfg = get_config()
     split_cfg = cfg.get("model", {}).get("split", {})
     val_ratio = val_ratio if val_ratio is not None else split_cfg.get("val_ratio", 0.2)
     split_method = split_method or split_cfg.get("split_method", "temporal")
     cycle_cfg = cycle_cfg or split_cfg.get("cycle", {})
 
+    cycle_参数 = dict(
+        val_ratio=val_ratio,
+        trend_window=cycle_cfg.get("trend_window", 120),
+        momentum_window=cycle_cfg.get("momentum_window", 60),
+        bull_threshold=cycle_cfg.get("bull_threshold", 0.03),
+        bear_threshold=cycle_cfg.get("bear_threshold", -0.03),
+        min_segment_days=cycle_cfg.get("min_segment_days", 20),
+    )
+
+    if split_method == "cycle_tail":
+        return cycle_tail_train_val_split(df, **cycle_参数)
+
     if split_method == "cycle":
-        train_df, val_df, holdout = cycle_train_val_split(
-            df,
-            val_ratio=val_ratio,
-            trend_window=cycle_cfg.get("trend_window", 120),
-            momentum_window=cycle_cfg.get("momentum_window", 60),
-            bull_threshold=cycle_cfg.get("bull_threshold", 0.03),
-            bear_threshold=cycle_cfg.get("bear_threshold", -0.03),
-            min_segment_days=cycle_cfg.get("min_segment_days", 20),
+        logger.warning(
+            "⚠️ split_method=cycle 会把验证集取成历史上零散周期段,训练集因此包含验证期之后的数据"
+            "(时间泄漏)。建议改为 cycle_tail;本次按旧行为执行。"
         )
-        return train_df, val_df, holdout
+        return cycle_train_val_split(df, **cycle_参数)
 
     train_df, val_df = temporal_train_val_split(df, val_ratio)
     return train_df, val_df, []

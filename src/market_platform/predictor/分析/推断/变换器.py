@@ -3,6 +3,7 @@ Transformer 时序模型 — 支持单尺度 / 融合多尺度 + regime 模式
 """
 
 from market_platform.predictor.核心.路径.项目 import checkpoints_dir
+from market_platform.core.随机 import 取生成器, 置随机种子
 from market_platform.predictor.配置 import get_config
 from market_platform.predictor.分析.特征.状态路由 import classify_regime, REGIME_BULL, REGIME_BEAR, REGIME_RANGE
 
@@ -182,6 +183,13 @@ class TransformerPredictor:
     # ── 训练 ──
 
     def train(self, df, val_df=None):
+        # 可复现性:每次训练都显式设定种子(配置 model.transformer.seed,默认 42)
+        self.seed = 置随机种子(int(self.cfg.get("seed", 42)))
+        # 训练区间元数据(用于判定样本外范围与复现)
+        self.train_rows = int(len(df))
+        if "date" in df.columns and len(df):
+            self.train_start = str(pd.Timestamp(df["date"].iloc[0]).date())
+            self.train_end = str(pd.Timestamp(df["date"].iloc[-1]).date())
         feat_map = self._resolve_feature_cols(df)
         if self.mode == "multiscale":
             return self._train_ms(df, val_df, feat_map)
@@ -205,7 +213,7 @@ class TransformerPredictor:
         use_soft = y.ndim == 2
         self.model = TimeSeriesTransformer(n_features=X.shape[2], seq_len=seq_len, d_model=int(self.cfg.get("d_model",128)), n_heads=int(self.cfg.get("n_heads",4)), n_layers=int(self.cfg.get("n_layers",3)), dropout=float(self.cfg.get("dropout",0.1)), n_classes=3).to(self.device)
         return self._fit_loop(
-            DataLoader(TensorDataset(torch.tensor(X), torch.tensor(y)), batch_size=int(self.cfg.get("batch_size",64)), shuffle=True),
+            DataLoader(TensorDataset(torch.tensor(X), torch.tensor(y)), batch_size=int(self.cfg.get("batch_size",64)), shuffle=True, generator=取生成器(getattr(self, "seed", self.cfg.get("seed", 42)))),
             DataLoader(TensorDataset(torch.tensor(Xv), torch.tensor(yv)), batch_size=int(self.cfg.get("batch_size",64))),
             use_soft,
             y_train=y,
@@ -225,10 +233,10 @@ class TransformerPredictor:
         use_reg = R is not None
         self.model = MultiScaleTransformer(n_features=X.shape[2], seq_len=int(self.cfg.get("seq_len",20)), d_model=int(self.cfg.get("d_model",96)), n_heads=int(self.cfg.get("n_heads",4)), n_layers=int(self.cfg.get("n_layers",3)), dropout=float(self.cfg.get("dropout",0.1)), n_classes=3, use_regime=use_reg).to(self.device)
         if use_reg:
-            tr = DataLoader(TensorDataset(torch.tensor(X), torch.tensor(R), torch.tensor(y)), batch_size=int(self.cfg.get("batch_size",64)), shuffle=True)
+            tr = DataLoader(TensorDataset(torch.tensor(X), torch.tensor(R), torch.tensor(y)), batch_size=int(self.cfg.get("batch_size",64)), shuffle=True, generator=取生成器(getattr(self, "seed", self.cfg.get("seed", 42))))
             va = DataLoader(TensorDataset(torch.tensor(Xv), torch.tensor(Rv), torch.tensor(yv)), batch_size=int(self.cfg.get("batch_size",64)))
         else:
-            tr = DataLoader(TensorDataset(torch.tensor(X), torch.tensor(y)), batch_size=int(self.cfg.get("batch_size",64)), shuffle=True)
+            tr = DataLoader(TensorDataset(torch.tensor(X), torch.tensor(y)), batch_size=int(self.cfg.get("batch_size",64)), shuffle=True, generator=取生成器(getattr(self, "seed", self.cfg.get("seed", 42))))
             va = DataLoader(TensorDataset(torch.tensor(Xv), torch.tensor(yv)), batch_size=int(self.cfg.get("batch_size",64)))
         return self._fit_loop(tr, va, use_soft, use_reg=use_reg, y_train=y)
 
@@ -393,11 +401,20 @@ class TransformerPredictor:
     def save(self, name="transformer_model"):
         p = checkpoints_dir() / f"{name}.pt"
         p.parent.mkdir(parents=True, exist_ok=True)
-        meta = {"mode": self.mode}
+        meta = {"mode": self.mode, "saved_at": pd.Timestamp.utcnow().isoformat()}
         if self.mode == "multiscale" and hasattr(self.model, "input_proj"):
             meta["n_features"] = self.model.input_proj.in_features
         elif hasattr(self.model, "input_proj"):
             meta["n_features"] = self.model.input_proj.in_features
+        # 训练区间元数据:没有它就无法判断某一行预测是否为"样本外"(评审 C9)
+        meta.update({
+            "train_rows": int(getattr(self, "train_rows", 0) or 0),
+            "train_start": str(getattr(self, "train_start", "") or ""),
+            "train_end": str(getattr(self, "train_end", "") or ""),
+            "seed": int(getattr(self, "seed", self.cfg.get("seed", 42))),
+            "seq_len": int(self.cfg.get("seq_len", 20)),
+            "feature_cols": list(self.feature_cols or []),
+        })
         sd = None
         if self.scaler_fitted:
             sd = {"mean": self.scaler.mean_.tolist(), "scale": self.scaler.scale_.tolist()}
@@ -428,7 +445,13 @@ class TransformerPredictor:
             self.scaler.scale_ = np.array(sd["scale"])
             self.scaler.n_features_in_ = len(self.scaler.mean_)
             self.scaler_fitted = True
-        logger.info(f"📂 已加载: {p}  mode={self.mode}")
+        self.meta = meta
+        self.train_end = str(meta.get("train_end", "") or "")
+        self.train_rows = int(meta.get("train_rows", 0) or 0)
+        logger.info(
+            f"📂 已加载: {p}  mode={self.mode} "
+            f"训练区间={meta.get('train_start','?')}..{meta.get('train_end','?')}"
+        )
         return True
 
     def load(self, name="transformer_model"):

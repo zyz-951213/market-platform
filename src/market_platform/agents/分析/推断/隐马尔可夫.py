@@ -7,7 +7,6 @@ import pandas as pd
 from market_platform.agents.分析.推断.状态 import MARKET_STATES, POSITION_MAP, StateConfirmPolicy, confirm_state_sequence
 from market_platform.agents.分析.回测.回测引擎 import walk_forward_split_index
 from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
 
 STATE_FEATURE_COLUMNS = [
     "return_mean",
@@ -104,6 +103,28 @@ def _build_transition_matrix(state_sequence: list[str]) -> pd.DataFrame:
     return pd.DataFrame(probs, index=MARKET_STATES, columns=MARKET_STATES)
 
 
+def _扩展窗口标准化(x: np.ndarray) -> np.ndarray:
+    """逐行扩展窗口标准化(严格因果):第 t 行只用第 1..t 行估计均值/方差。
+
+    与全样本 StandardScaler 的区别:不使用任何未来样本的统计量。
+    早期行(样本很少)方差可能为 0,此时标准差按 1 处理,避免除零。
+    """
+    n, m = x.shape
+    out = np.zeros_like(x, dtype=float)
+    cum_sum = np.zeros(m, dtype=float)
+    cum_sq = np.zeros(m, dtype=float)
+    for i in range(n):
+        cum_sum += x[i]
+        cum_sq += x[i] ** 2
+        k = i + 1
+        mean = cum_sum / k
+        var = np.maximum(cum_sq / k - mean**2, 0.0)
+        std = np.sqrt(var)
+        std = np.where(std > 1e-12, std, 1.0)
+        out[i] = (x[i] - mean) / std
+    return out
+
+
 def classify_with_hmm(
     features: pd.DataFrame,
     n_states: int = 5,
@@ -121,8 +142,9 @@ def classify_with_hmm(
         raise ValueError("Need at least 2 state features for HMM classification")
 
     x = features[feature_cols].fillna(0).to_numpy()
-    scaler = StandardScaler()
-    x_scaled = scaler.fit_transform(x)
+    # 前视修正(评审 R5):原实现是全样本 StandardScaler.fit_transform,
+    # 每行输入都携带了未来样本的均值/方差;改为**扩展窗口标准化**(第 t 行只用 1..t 行)。
+    x_scaled = _扩展窗口标准化(x)
 
     n_states = min(n_states, len(x_scaled))
     model = GaussianMixture(n_components=n_states, random_state=random_state)

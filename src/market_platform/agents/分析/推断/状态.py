@@ -188,9 +188,11 @@ def classify_market_states(
     persistence = _safe_col(df, "leader_persistence")
     agreement = _safe_col(df, "bull_agreement")
 
-    ret_std_n = ret_std / (ret_std.max() + 1e-9)
-    vol_spike_n = vol_spike / (vol_spike.max() + 1e-9)
-    agent_n = agent_max / (agent_max.max() + 1e-9)
+    # 前视修正(评审 R5):原实现用**全样本 max** 归一化,第 t 行的输入携带了未来最大值。
+    # 改为扩展窗口(截至当前行的历史最大值),严格因果。
+    ret_std_n = ret_std / (ret_std.cummax() + 1e-9)
+    vol_spike_n = vol_spike / (vol_spike.cummax() + 1e-9)
+    agent_n = agent_max / (agent_max.cummax() + 1e-9)
 
     states: list[str] = []
     scores: list[float] = []
