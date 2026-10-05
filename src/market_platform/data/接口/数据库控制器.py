@@ -1,8 +1,8 @@
 """数据库控制器 - 只针对金融市场数据"""
 from __future__ import annotations
 
-from market_platform.core.路径 import 数据库配置
-import yaml
+from market_platform.core.配置 import 数据库设置
+from market_platform.core.路径 import 域_数据底座
 from ..存储.数据库 import DatabaseManager
 
 DB_NAME = "金融市场数据"
@@ -14,10 +14,21 @@ class DBController:
         self._manager = DatabaseManager(self._dbs)
 
     def _load_config(self) -> dict:
-        cfg_path = 数据库配置()
-        with open(cfg_path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
-        return raw.get("databases") or {}
+        """库配置唯一来源 = config/数据库.yaml(经 core.配置 解析)。
+
+        历史版本自行 yaml 解析旧格式 `databases: {...}`,配置收敛后必须走内核,
+        否则会静默变成 unconfigured。
+        """
+        设置 = 数据库设置(域_数据底座)
+        if not 设置.dsn:
+            return {}
+        return {
+            DB_NAME: {
+                "dsn": 设置.dsn,
+                "label": DB_NAME,
+                "description": "统一 A 股量化库(公共 / 行情增量 / 行为分析 / 指数预测)",
+            }
+        }
 
     def get_db_info(self) -> dict:
         info = self._dbs.get(DB_NAME)

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
@@ -47,6 +47,9 @@ def 挂载静态站点(app: FastAPI, 目录: Path | str, *, 资源前缀: str = 
     def _回退(full_path: str) -> FileResponse:  # pragma: no cover - 薄封装
         # 注意:路由占位符必须是 ASCII 名称,Starlette 的路径参数正则不认中文名,
         # 写成 `{{完整路径:path}}` 会退化为字面量路径,导致深链接 404。
+        # API 命名空间下未命中的路径应明确 404,而不是回退成 HTML(否则调用方拿到 HTML 才报错)。
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="接口不存在")
         候选 = 根 / full_path
         if 候选.is_file():
             return FileResponse(候选)

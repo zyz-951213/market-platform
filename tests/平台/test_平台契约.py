@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from market_platform.core.路径 import (
     仓库根,
@@ -119,6 +118,11 @@ def test_门户装配三域且站点已构建():
     域健康 = 客户端.get(f"/{域_数据底座}/api/health")
     assert 域健康.status_code == 200
     assert 域健康.json()["status"] == "ok"
+
+    # 未知 API 路径必须 404(JSON),不能回退成站点 HTML
+    未知 = 客户端.get(f"/{域_数据底座}/api/绝对不存在的接口")
+    assert 未知.status_code == 404
+    assert 未知.json()["detail"] == "接口不存在"
 
 
 def test_源码目录无遗留旧路径引用():

@@ -119,11 +119,15 @@ app = create_app()
 
 
 def main(argv: list[str] | None = None) -> int:
-    """启动统一门户(默认 0.0.0.0:18800)。"""
+    """启动统一门户(默认 0.0.0.0:18800)。
+
+    环境变量名必须是 ASCII(`MARKET_PORTAL_PORT` / `MARKET_PORTAL_HOST`):
+    shell 与 systemd 都无法设置中文变量名,历史写法 `门户_PORT` 永远读不到。
+    """
     import uvicorn
 
-    host = os.environ.get("门户_HOST", os.environ.get("API_HOST", "0.0.0.0"))
-    port = int(os.environ.get("门户_PORT", "18800"))
+    host = os.environ.get("MARKET_PORTAL_HOST") or os.environ.get("API_HOST") or "0.0.0.0"
+    port = int(os.environ.get("MARKET_PORTAL_PORT") or os.environ.get("PORT") or 18800)
     print(f"[门户] 统一站点与三域 API: http://{host}:{port}/")
     uvicorn.run(app, host=host, port=port)
     return 0
