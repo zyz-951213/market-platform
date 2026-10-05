@@ -1,4 +1,5 @@
 [Unit]
+# 文件名必须是 ASCII(systemd 会转义中文名并报"单元不存在");描述可中文
 Description=市场量化平台 统一门户(统一站点 + 数据底座/行为分析/指数预测 三域 API)
 Documentation=file:@仓库根@/docs/ARCHITECTURE.md
 After=network-online.target

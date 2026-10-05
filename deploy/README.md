@@ -14,7 +14,7 @@
 | `/指数预测/` `/指数预测/api/*` | 指数预测页面与 API |
 | `/健康` | 三域装配状态 |
 
-- 单元:`deploy/systemd/市场平台门户.service`(默认 `:18800`,可用 `MARKET_PORTAL_PORT` 覆盖)
+- 单元:`deploy/systemd/market-portal.service`(默认 `:18800`,可用 `MARKET_PORTAL_PORT` 覆盖)
 - 目录约定:运行态数据/输出/模型/日志在仓库根对应目录,包目录只放代码，配置唯一在 `config/`。
 
 ## 二、三域独立端口(保留,便于单独调试)
@@ -32,7 +32,7 @@
 
 | 单元 | 计划 | 说明 |
 |------|------|------|
-| `数据底座/systemd/数据更新.timer` | 周一~五 07:00 | 数据底座增量更新(幂等 upsert),**默认不启用** |
+| `数据底座/systemd/market-data-update.timer` | 周一~五 07:00 | 数据底座增量更新(幂等 upsert),**默认不启用** |
 | `指数预测/systemd/market-predictor-update.timer` | 周五 16:45 | 指数预测增量更新(默认禁全量) |
 | `指数预测/systemd/market-predictor-paper.timer` | 周五 16:30 | 指数预测模拟盘决策 |
 
@@ -46,14 +46,29 @@
 
 单元模板里的 `@仓库根@` / `@PYTHON@` 由脚本替换为真实路径,换机器无需手改。
 
-## 五、已退役
+## 五、公网入口(cpolar)
+
+`~/.cpolar/cpolar.yml` 中三个子域(**your-tunnel-1 / your-tunnel-2 / your-tunnel-3**)已全部指向统一门户 `:18800`,
+对外只有**一个站点**;改造前的备份在 `~/.cpolar/cpolar.yml.bak-*`。
+
+- 如需按域隔离暴露,把对应 tunnel 的 `addr` 改回 `18766`(数据底座)/ `8766`(行为分析)/ `18765`(指数预测)。
+- cpolar 服务:`systemctl --user start cpolar`(配置文件改动在下次启动时生效)。
+
+## 六、已退役
 
 | 旧单元 | 去向 |
 |--------|------|
-| `database-frontend.service`(Vite preview :19081) | 由统一门户取代 |
-| `market-predictor-frontend.service`(Vite preview :19080) | 由统一门户取代 |
-| `market-agents-frontend.service`(Vite preview :8080) | 由统一门户取代 |
+| `database-frontend.service`(Vite preview :19081) | 已 disable,由统一门户取代 |
+| `market-predictor-frontend.service`(Vite preview :19080) | 由统一门户取代(原为 disabled) |
+| `market-agents-frontend.service`(Vite preview :8080) | 由统一门户取代(原为 disabled) |
+| `market-platform-portal.service`(:8000 静态跳转页) | 已 disable,由统一门户取代 |
 | 单包 `install-systemd.sh` / `install-user-systemd.sh` | 由 `安装服务.sh` 取代 |
+
+`database-api.service`(:18766)保留运行,便于单独调试;它与门户共用同一代码与配置,
+如确认不再需要:`systemctl --user disable --now database-api.service`。
+
+**systemd 单元名必须是 ASCII**:中文名会被 systemd 转义并报"单元不存在"
+(文件名 `market-portal.service`,Description 仍为中文)。
 
 ## 六、云端推送(数据底座)
 

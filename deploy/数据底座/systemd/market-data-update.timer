@@ -4,7 +4,7 @@ Description=数据底座 每交易日 07:00 增量更新(默认未启用,由安�
 [Timer]
 OnCalendar=Mon..Fri *-*-* 07:00:00
 Persistent=true
-Unit=数据更新.service
+Unit=market-data-update.service
 
 [Install]
 WantedBy=timers.target
