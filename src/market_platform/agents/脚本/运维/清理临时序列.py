@@ -4,7 +4,7 @@
 当前库已改为窄表（分钟日特征 / 参与者活跃度），ephemeral 系列不再落库；
 本脚本仅做状态检查。
 
-  PYTHONPATH=后端 python scripts/purge_ephemeral_series.py
+  python python -m market_platform.agents.脚本.运维.清理临时序列
 """
 
 from __future__ import annotations

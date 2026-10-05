@@ -1,62 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Market Platform · 统一入口</title>
-  <style>
-    :root { color-scheme: light dark; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: linear-gradient(135deg, #0f172a, #1e293b);
-      color: #e2e8f0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 40px 20px;
-    }
-    h1 { margin: 0 0 6px; font-size: 32px; letter-spacing: 1px; }
-    .sub { margin: 0 0 36px; color: #94a3b8; font-size: 14px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; width: 100%; max-width: 920px; }
-    .card {
-      display: block;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.10);
-      border-radius: 14px;
-      padding: 24px;
-      text-decoration: none;
-      color: inherit;
-      transition: transform .15s ease, border-color .15s ease, background .15s ease;
-    }
-    .card:hover { transform: translateY(-3px); border-color: #38bdf8; background: rgba(255,255,255,.07); }
-    .card h2 { margin: 0 0 8px; font-size: 20px; color: #f8fafc; }
-    .card p { margin: 0 0 12px; color: #cbd5e1; font-size: 14px; line-height: 1.6; }
-    .tag { display: inline-block; font-size: 12px; padding: 3px 8px; border-radius: 999px; background: rgba(56,189,248,.15); color: #7dd3fc; }
-  </style>
-</head>
-<body>
-  <h1>Market Platform</h1>
-  <p class="sub">统一 A 股量化平台 · 数据底座 + 行为分析 + 指数预测</p>
-  <div class="grid">
-    <a class="card" href="http://127.0.0.1:19081" target="_blank">
-      <h2>数据底座</h2>
-      <p>金融市场数据只读查看：概览、表结构、条件查询与水位滞后。</p>
-      <span class="tag">database · :19081</span>
-    </a>
-    <a class="card" href="http://127.0.0.1:8080" target="_blank">
-      <h2>行为分析</h2>
-      <p>NMF / HMM 状态择时：标的、行业、组合与模拟盘。</p>
-      <span class="tag">market-agents · :8080</span>
-    </a>
-    <a class="card" href="http://127.0.0.1:19080" target="_blank">
-      <h2>指数预测</h2>
-      <p>LLM + Transformer 六袖组合：概览、回测、模拟盘与归因。</p>
-      <span class="tag">market-predictor · :19080</span>
-    </a>
-  </div>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>市场量化平台 · 统一入口</title>
+  </head>
+  <body>
+    <div id="应用"></div>
+    <script type="module" src="/源码/入口.ts"></script>
+  </body>
 </html>

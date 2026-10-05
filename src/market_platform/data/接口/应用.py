@@ -1,19 +1,34 @@
-"""FastAPI 应用"""
+"""数据底座 FastAPI 应用。
+
+静态托管:默认挂载 `web/dist/数据底座`(由统一门户以 `/<域>` 前缀访问);
+产物不存在时只提供 API。历史版本硬编码 `parents[2]/前端/dist`,迁移后该路径
+不存在、页面 404 —— 现统一走 `core.路径.前端产物()`。
+"""
+
 from __future__ import annotations
+
 import os
 from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from .路由 import router
+
+from market_platform.core.路径 import 前端产物
+from market_platform.core.静态站点 import 挂载静态站点
+from market_platform.data.接口.路由 import router
+
+域 = "数据底座"
 
 
-def create_app(*, serve_frontend: bool | None = None) -> FastAPI:
+def create_app(
+    *,
+    serve_frontend: bool | None = None,
+    static_dir: Path | str | None = None,
+) -> FastAPI:
     if serve_frontend is None:
-        serve_frontend = os.getenv("SERVE_FRONTEND", "1").lower() in {"1", "true", "yes"}
+        serve_frontend = os.getenv("SERVE_FRONTEND", "0").lower() in {"1", "true", "yes"}
 
-    app = FastAPI(title="金融市场数据管理", version="0.2.0")
+    app = FastAPI(title="金融市场数据管理", version="0.4.0")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -24,29 +39,7 @@ def create_app(*, serve_frontend: bool | None = None) -> FastAPI:
     app.include_router(router)
 
     if serve_frontend:
-        frontend_dist = Path(__file__).resolve().parents[2] / "前端" / "dist"
-        if frontend_dist.exists() and (frontend_dist / "index.html").exists():
-            assets = frontend_dist / "assets"
-            if assets.is_dir():
-                app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
-
-            @app.get("/")
-            def index():
-                return FileResponse(
-                    frontend_dist / "index.html",
-                    headers={"Cache-Control": "no-cache"},
-                )
-
-            @app.get("/{full_path:path}")
-            def spa_fallback(full_path: str):
-                candidate = frontend_dist / full_path
-                if candidate.is_file():
-                    return FileResponse(candidate)
-                return FileResponse(
-                    frontend_dist / "index.html",
-                    headers={"Cache-Control": "no-cache"},
-                )
-
+        挂载静态站点(app, static_dir or (前端产物() / 域))
     return app
 
 

@@ -1,0 +1,21 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#应用 {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0b1120;
+}
+
+a {
+  color: inherit;
+}

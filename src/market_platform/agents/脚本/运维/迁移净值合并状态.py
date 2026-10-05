@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """检查策略净值表结构（旧 market_states 合并迁移已完成）。
 
-  PYTHONPATH=后端 python3 scripts/migrate_equity_merge_states.py
-  PYTHONPATH=后端 python3 scripts/migrate_equity_merge_states.py --vacuum
+  python3 python -m market_platform.agents.脚本.运维.迁移净值合并状态
+  python3 python -m market_platform.agents.脚本.运维.迁移净值合并状态 --vacuum
 """
 
 from __future__ import annotations

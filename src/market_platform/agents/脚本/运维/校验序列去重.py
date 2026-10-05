@@ -2,8 +2,8 @@
 """单标的验证：哪些 symbol_series / 表列可安全去重而不丢信息。
 
 用法:
-  python scripts/validate_series_dedup.py --symbol 000001
-  python scripts/validate_series_dedup.py --symbol 000001 --atol 1e-6
+  python python -m market_platform.agents.脚本.运维.校验序列去重 --symbol 000001
+  python python -m market_platform.agents.脚本.运维.校验序列去重 --symbol 000001 --atol 1e-6
 
 退出码: 0=全部通过, 1=有失败项。
 """
@@ -239,7 +239,7 @@ def main() -> int:
     if failed:
         print("有失败项：先别全量 DELETE；收紧比对列或检查该标的脏数据后再去重。")
     else:
-        print("停写已生效；可执行: PYTHONPATH=后端 python scripts/purge_ephemeral_series.py --execute [--vacuum]")
+        print("停写已生效；可执行: python python -m market_platform.agents.脚本.运维.清理临时序列 --execute [--vacuum]")
     return 1 if failed else 0
 
 
