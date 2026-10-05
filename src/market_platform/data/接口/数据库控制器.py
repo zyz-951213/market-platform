@@ -1,5 +1,7 @@
 """数据库控制器 - 只针对金融市场数据"""
 from __future__ import annotations
+
+from market_platform.core.路径 import 数据库配置
 from pathlib import Path
 import yaml
 from ..存储.数据库 import DatabaseManager
@@ -13,7 +15,7 @@ class DBController:
         self._manager = DatabaseManager(self._dbs)
 
     def _load_config(self) -> dict:
-        cfg_path = Path(__file__).resolve().parents[1] / "配置" / "数据库.yaml"
+        cfg_path = 数据库配置()
         with open(cfg_path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         return raw.get("databases") or {}

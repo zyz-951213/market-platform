@@ -7,14 +7,21 @@
 """
 from __future__ import annotations
 
+from market_platform.core.配置 import 数据库DSN
+
 import importlib.util
 import sys
 import types
 from pathlib import Path
 
+from market_platform.core.路径 import 仓库根
+
 from .数据更新器 import refresh_watermark
 
-_PROJECTS = Path("/home/zhuyizhou/my_projects")
+import os
+
+# 兄弟项目根(隐因子等)可用环境变量覆盖;默认取当前仓库的父目录
+_PROJECTS = Path(os.environ.get("MARKET_PROJECTS_ROOT") or Path(仓库根()).parent)
 _FACTOR_ROOT = _PROJECTS / "factor-latent"
 _FACTOR_BACKEND = _FACTOR_ROOT / "后端"
 
@@ -22,7 +29,7 @@ _FACTOR_BACKEND = _FACTOR_ROOT / "后端"
 def _refresh(schema: str, table: str, date_col: str, note: str = "") -> None:
     import psycopg
 
-    dsn = "postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE"
+    dsn = 数据库DSN()
     with psycopg.connect(dsn, autocommit=True) as conn:
         try:
             refresh_watermark(

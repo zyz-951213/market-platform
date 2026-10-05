@@ -1,5 +1,0 @@
-databases:
-  金融市场数据:
-    dsn: postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE
-    label: 金融市场数据
-    description: 通用金融市场数据

@@ -2,10 +2,12 @@
 """扫描统一库全部物理表（+关键逻辑接口），登记并刷新 行情增量.同步水位。
 
 用法:
-  python3 后端/脚本/刷新全库水位.py
-  python3 后端/脚本/刷新全库水位.py --dry-run
+  python -m market_platform.data.脚本.刷新全库水位
+  python -m market_platform.data.脚本.刷新全库水位 --dry-run
 """
 from __future__ import annotations
+
+from market_platform.core.配置 import 数据库DSN
 
 import argparse
 import sys
@@ -14,7 +16,7 @@ from typing import Any
 
 import psycopg
 
-DSN = "postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE"
+DSN = 数据库DSN()
 
 SCHEMAS = (
     "公共",
@@ -341,7 +343,7 @@ def main() -> int:
     try:
         # ensure DDL
         with conn.cursor() as cur:
-            cur.execute(open("/home/zhuyizhou/my_projects/market-platform/packages/data/schema/行情增量全库水位.sql").read())
+            cur.execute((schema根() / "行情增量全库水位.sql").read_text(encoding="utf-8"))
         conn.commit()
 
         relations = fetch_relations(conn)

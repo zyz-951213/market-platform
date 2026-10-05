@@ -1,6 +1,8 @@
 """更新作业编排器：单表 / 按标签 / 全部可调度。"""
 from __future__ import annotations
 
+from market_platform.core.配置 import 数据库DSN
+
 import json
 import threading
 import traceback
@@ -14,7 +16,7 @@ from psycopg.types.json import Json
 from .数据更新器 import DataUpdater, get_watermark, refresh_watermark
 from .更新注册表 import resolve
 
-DSN = "postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE"
+DSN = 数据库DSN()
 DB_NAME = "金融市场数据"
 
 _lock = threading.Lock()
@@ -428,7 +430,7 @@ def refresh_all_watermarks() -> dict:
     import sys
 
     r = subprocess.run(
-        [sys.executable, "/home/zhuyizhou/my_projects/market-platform/src/market_platform/data/脚本/刷新全库水位.py"],
+        [sys.executable, "-m", "market_platform.data.脚本.刷新全库水位"],
         capture_output=True,
         text=True,
         timeout=600,

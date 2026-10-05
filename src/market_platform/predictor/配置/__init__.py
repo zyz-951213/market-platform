@@ -1,4 +1,7 @@
-"""配置加载：默认读取 配置/配置档/默认.yaml，可通过环境变量 CONFIG_PATH 覆盖。"""
+"""配置加载:默认读取 `config/指数预测/配置档/默认.yaml`,可用 CONFIG_PATH 覆盖。
+
+环境变量与 `${ENV}` 展开统一走 `core.配置`(唯一实现),不再各自维护一份。
+"""
 
 from __future__ import annotations
 
@@ -9,6 +12,8 @@ from typing import Any, Dict
 import pandas as pd
 import yaml
 
+from market_platform.core.配置 import 展开环境变量 as _core_expand_env
+from market_platform.core.配置 import 加载环境变量 as _core_load_env
 from market_platform.predictor.核心.路径.项目 import backend_root, profile_path, repo_root
 
 DEFAULT_CONFIG_PATH = profile_path("默认.yaml")
@@ -20,24 +25,13 @@ _config: Dict[str, Any] | None = None
 
 
 def _load_env_files() -> None:
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv(repo_root() / ".env")
-    except ImportError:
-        pass
+    """加载环境变量文件(优先 config/.env,回退仓库根/.env)。"""
+    _core_load_env()
 
 
 def _expand_env(value: Any) -> Any:
-    """展开 YAML 中的 ${ENV_VAR} 占位符。"""
-    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
-        var = value[2:-1].strip()
-        return os.environ.get(var, "")
-    if isinstance(value, dict):
-        return {k: _expand_env(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_expand_env(v) for v in value]
-    return value
+    """展开 YAML 中的 ${ENV_VAR} 占位符(委托 core,支持 ${VAR:-默认值})。"""
+    return _core_expand_env(value)
 
 
 def _deep_merge(base: dict, overlay: dict) -> dict:
