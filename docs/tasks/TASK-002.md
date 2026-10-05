@@ -1,6 +1,34 @@
 # TASK-002 — market-platform 单库归一重构(三站合一 + 去冗余 + 中文规范化)
 
-状态: 进行中(自主执行,授权来自用户在会话中的直接指令)
+状态: **已完成**(2026-10-05,commits `21c1b6e` → `3c1808b`)
+
+## 验收结果(逐条对照本卡验收证据)
+
+| 阶段 | 验收证据 | 结果 |
+|------|----------|------|
+| P1 内嵌仓折叠 | `git ls-files packages/agents packages/predictor` 89 个文件;`git status` 无 embedded 警告 | ✅ |
+| P1.5 导入副作用 | `python -c "import …更新金融市场数据"` 0.09s 完成、无任何任务输出 | ✅ |
+| P2 目录归并 | `schema/ deploy/ docs/ tests/ web/模块/` 就位;`packages/` 仅剩兼容软链(README 写明删除条件) | ✅ |
+| P3 配置/路径归一 | 全仓无 `后端/` 引用与家目录硬编码(契约测试守护);`core/路径.py` 唯一根;`.env` 只在 `config/` | ✅ |
+| P4 三站合一 | `node web/构建.mjs` 产出 `index.html` + 三域;门户 TestClient:/、三域页面、深链接、三域 API 全 200 | ✅ |
+| P5 去重与 CLI | 域内重复的 存储配置/路径/静态托管 收敛到 `core`;`market-platform {web,data,agents,predictor,健康}` 可用 | ✅ |
+| P6 质量门 | `ruff check` 零告警;`pytest tests` 19 passed;CI 就位;`market-platform 健康` 三域连通 | ✅ |
+| P7 交付 | `docs/分析报告.md`(已修/遗留)、`deploy/README.md`、`web/README.md`、宪法与三域契约回写 | ✅ |
+
+## 与原计划的偏差(已记录)
+
+1. **前端归并方式**:采用「站点壳 + 三域子应用(单次多入口构建)」而非把三个前端重写成一个 Vue 应用。
+   理由:数据底座与指数预测是原生 JS、行为分析是 Vue3,重写业务页面风险远大于收益;
+   单站点/单构建/单服务/单端口/统一导航的目标已达成,后续可渐进把子应用内嵌为组件。
+2. **配置档保留分域目录**(`config/<域>/配置档/`),只把连接与 search_path 收敛为唯一真相
+   `config/数据库.yaml`;强行合并三域配置档会破坏各域差异较大的参数结构。
+3. **`UPDATE_API_ENABLED` 默认改为 0**:对齐宪法与既有 `UPDATE_API_ENABLED` 语义;
+   若需要浏览器触发更新,改 `config/.env` 后重启。
+4. **未安装新 systemd 单元**:安装动作需要写 `~/.config/systemd/user`(工作区之外),
+   已提供 `deploy/安装服务.sh` 与兼容层,待执行。
+
+## 目标(可验收的终局形态)
+
 授权原话:「把三个网站最好归并成一个项目,代码冗余和合成,规范化项目尽量中文目录命名,以一个二十年软件架构师去好好重构项目,自己执行就行直到完成完美交付」
 
 ## 目标(可验收的终局形态)
