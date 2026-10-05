@@ -174,7 +174,9 @@ class PostgresStore:
             ldf = self._read_sql(sql_labeled, (index_code,))
             if not ldf.empty:
                 labeled = int(ldf.iloc[0]["n"] or 0)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            # 评审 C4:此前静默置 0,会让"统计失败"看起来像"没有标注数据"
+            logger.warning("标注 bar 统计失败,按 0 处理(可能影响 stale/就绪判断): %s", exc)
             labeled = 0
         return {
             "total_bars": total,

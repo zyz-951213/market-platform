@@ -8,6 +8,8 @@ unified_sharpe 模式下改为六袖统一账本（进攻/防守/现金流）。
 
 from __future__ import annotations
 
+from loguru import logger
+
 from typing import Any, Dict, List
 
 from market_platform.predictor.配置 import get_config
@@ -60,7 +62,9 @@ def build_strategy_summary() -> Dict[str, Any]:
         from market_platform.predictor.核心.路径.项目 import checkpoints_dir
 
         transformer_ckpt = (checkpoints_dir() / "transformer_model.pt").is_file()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        # 评审 C4:此前静默置 False,会把"检测失败"显示成"未启用 checkpoint"
+        logger.warning("checkpoint 检测失败,按未启用展示: %s", exc)
         transformer_ckpt = False
     if transformer_on and not transformer_ckpt:
         transformer_status = "已开开关但缺 checkpoint（量价通道无法推理）"

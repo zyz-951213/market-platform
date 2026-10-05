@@ -238,7 +238,13 @@ def run_channel_analysis(
 
 
 def get_backtest_charts(provider: Optional[str] = None) -> Dict[str, Any]:
-    """构建回测可视化序列（净值、回撤、分布）"""
+    """构建回测可视化序列（净值、回撤、分布）。
+
+    评审 C4:降级(如闲置资金曲线构建失败)会写入响应的 `degraded` 字段,
+    调用方不应把"仍然 200 的残缺数据"当作完整结果。
+    """
+    # 降级说明随响应返回
+    降级说明: list[str] = []
     from market_platform.predictor.接口.回测存储 import load_backtest_for_provider, provider_from_model_label
 
     backtest = load_backtest_for_provider(provider)
@@ -413,6 +419,7 @@ def get_backtest_charts(provider: Optional[str] = None) -> Dict[str, Any]:
                 }
         except Exception as exc:
             logger.warning(f"闲置资金曲线构建失败: {exc}")
+            降级说明.append(f"闲置资金曲线构建失败: {type(exc).__name__}: {exc}")
 
     from market_platform.predictor.分析.资金.闲置管理 import build_fund_allocation_history
 
@@ -447,7 +454,7 @@ def get_backtest_charts(provider: Optional[str] = None) -> Dict[str, Any]:
         strategy_label="沪深300" if unified_mode else None,
     )
 
-    return {
+    _响应 = {
         "available": True,
         "bar_freq": meta["bar_freq"],
         "backtest_bar_freq": backtest_freq,
@@ -504,6 +511,10 @@ def get_backtest_charts(provider: Optional[str] = None) -> Dict[str, Any]:
         "total_count": len(merged),
         "strategy_summary": build_strategy_summary(),
     }
+    if 降级说明:
+        # 调用方据此知道"这份数据是残缺的",而不是静默接受(评审 C4)
+        _响应["degraded"] = 降级说明
+    return _响应
 
 
 def build_prompt_preview(date: Optional[str] = None) -> Dict[str, Any]:

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from market_platform.predictor.核心.路径.项目 import data_dir
 
 import hashlib
@@ -307,16 +311,46 @@ def load_latest_backtest() -> Optional[Dict[str, Any]]:
 
 
 def load_backtest_for_provider(provider: str | None) -> Optional[Dict[str, Any]]:
-    """按渠道加载最近一次回测；provider 为空则取 is_latest。"""
+    """按渠道加载最近一次回测;provider 为空则取 is_latest。
+
+    **串号提示(评审 C5)**:找不到该渠道时会依次回退"旧标签"→"最近一次回测",
+    这可能展示**别的渠道**的回测结果。现在每次回退都会打日志,并在返回值上标注
+    `provider_mismatch=True` 与 `requested_provider`,避免前端把它当成本渠道结果。
+    """
     if not provider:
         return load_latest_backtest()
     labeled = expected_model_label(provider=provider)
     bt = dal_load_backtest_by_model_name(labeled)
     if bt:
         return bt
-    # 兼容旧标签（无 @provider）
+
+    # 兼容旧标签(无 @provider)
     legacy = labeled.rsplit("@", 1)[0]
-    return dal_load_backtest_by_model_name(legacy) or load_latest_backtest()
+    bt = dal_load_backtest_by_model_name(legacy)
+    if bt:
+        logger.warning(
+            "回测渠道回退: 未找到 %s,改用旧标签 %s 的回测(provider_mismatch)",
+            labeled, legacy,
+        )
+        return _标注渠道不符(bt, provider, 原因=f"使用旧标签 {legacy}")
+
+    bt = load_latest_backtest()
+    if bt:
+        logger.warning(
+            "回测渠道回退: 未找到 %s 及其旧标签,改用最近一次回测(provider_mismatch)",
+            labeled,
+        )
+        return _标注渠道不符(bt, provider, 原因="使用最近一次回测")
+    return bt
+
+
+def _标注渠道不符(bt: Dict[str, Any], provider: str, *, 原因: str) -> Dict[str, Any]:
+    """在回测结果上标注"这不是你请求的渠道"(评审 C5)。"""
+    out = dict(bt)
+    out["provider_mismatch"] = True
+    out["requested_provider"] = provider
+    out["provider_mismatch_reason"] = 原因
+    return out
 
 
 def list_backtest_channel_summaries() -> Dict[str, Any]:

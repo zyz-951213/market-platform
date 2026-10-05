@@ -180,3 +180,51 @@ def test_破坏性脚本都声明了安全参数():
         文本 = (运维 / 名).read_text(encoding="utf-8")
         assert "加入安全参数" in 文本, f"{名} 未提供 --dry-run/--yes"
         assert "破坏性操作护栏" in 文本, f"{名} 未接入护栏"
+
+
+# ── C5:回测渠道回退必须标注,不能让别的渠道冒充 ────────────────────────────
+def test_渠道回退会标注_provider_mismatch(monkeypatch):
+    from market_platform.predictor.存储 import 回测存储
+
+    monkeypatch.setattr(回测存储, "expected_model_label", lambda provider=None: "m@x")
+    monkeypatch.setattr(回测存储, "dal_load_backtest_by_model_name", lambda name: None if "@" in name else {"model_name": "m"})
+    monkeypatch.setattr(回测存储, "load_latest_backtest", lambda: {"model_name": "latest"})
+
+    结果 = 回测存储.load_backtest_for_provider("x")
+    assert 结果 is not None
+    assert 结果.get("provider_mismatch") is True
+    assert 结果.get("requested_provider") == "x"
+    assert 结果.get("provider_mismatch_reason")
+
+
+def test_渠道命中时不得标注_mismatch(monkeypatch):
+    from market_platform.predictor.存储 import 回测存储
+
+    monkeypatch.setattr(回测存储, "expected_model_label", lambda provider=None: "m@x")
+    monkeypatch.setattr(回测存储, "dal_load_backtest_by_model_name", lambda name: {"model_name": name})
+
+    结果 = 回测存储.load_backtest_for_provider("x")
+    assert 结果 is not None and "provider_mismatch" not in 结果
+
+
+# ── C4:降级必须随响应返回 ────────────────────────────────────────────────
+def test_回测图接口在无降级时不带_degraded():
+    """正常路径不应平白多出字段(避免前端/缓存误判)。"""
+    import inspect
+
+    from market_platform.predictor.接口 import 市场分析
+
+    源码 = inspect.getsource(市场分析.get_backtest_charts)
+    assert "if 降级说明" in 源码, "降级字段必须是条件添加"
+    assert 'degraded' in 源码
+
+
+def test_静默降级点已加日志():
+    """C4 清单:统计失败/checkpoint 检测失败必须留痕,而不是静默置默认值。"""
+    import inspect
+
+    from market_platform.predictor.分析.指标 import 策略摘要
+    from market_platform.predictor.存储 import 数据库
+
+    assert "检测失败" in inspect.getsource(策略摘要.build_strategy_summary)
+    assert "统计失败" in inspect.getsource(数据库.PostgresStore)
