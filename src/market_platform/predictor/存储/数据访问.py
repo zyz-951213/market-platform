@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import json
 import logging
 import re
@@ -539,3 +541,41 @@ def migrate_files_to_pg() -> dict[str, int]:
             break
 
     return stats
+
+
+# ── 特征表读取(自 接口/市场分析 下移:分层修正 C1)──────────────────────────
+def 特征产物路径() -> Path:
+    from market_platform.predictor.配置 import get_config
+
+    cfg = get_config()
+    return data_dir() / "processed" / f"{cfg['data']['index_code']}_with_features.parquet"
+
+
+_FEATURE_DF_CACHE: dict[str, Any] = {"key": None, "mtime": None, "df": None}
+
+
+def load_feature_df() -> pd.DataFrame:
+    """加载指数特征表(进程内短缓存;自 接口/市场分析 下移,分层修正 C1)。"""
+    from market_platform.predictor.配置 import get_config
+
+    cfg = get_config()
+    code = cfg["data"]["index_code"]
+    # parquet 回退路径用 mtime 失效;PG 主路径用 60s TTL
+    path = 特征产物路径()
+    mtime = path.stat().st_mtime if path.exists() else None
+    now = time.time()
+    hit = _FEATURE_DF_CACHE
+    if (
+        hit.get("df") is not None
+        and hit.get("key") == code
+        and hit.get("mtime") == mtime
+        and (mtime is not None or now - float(hit.get("loaded_at") or 0) < 60)
+    ):
+        return hit["df"]
+
+    df = load_index_features(code)
+    if df is None or df.empty:
+        raise FileNotFoundError("特征数据不存在，请先运行: market-predictor pipeline -- --step data")
+    out = df.sort_values("date").reset_index(drop=True)
+    _FEATURE_DF_CACHE.update({"key": code, "mtime": mtime, "df": out, "loaded_at": now})
+    return out

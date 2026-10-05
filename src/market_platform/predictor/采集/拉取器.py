@@ -14,15 +14,22 @@ from market_platform.predictor.存储.数据访问 import load_series_df, save_s
 
 def fetch_index_daily(
     index_code: str = "000300.SH",
-    start_date: str = "2010-01-01",
-    end_date: str = "2025-12-31",
+    start_date: str | None = None,
+    end_date: str | None = None,
     source: str = "akshare",
     save: bool = True,
 ) -> pd.DataFrame:
     """
     获取指数日度行情数据
-    默认：沪深300，2010年起
+
+    默认:沪深300,自 2010-01-01 起,到今天为止。
+    **修复(评审 C11)**:此前的默认 `end_date="2025-12-31"` 会把数据静默截断到过去,
+    直接调用本函数的外部代码拿不到近期行情。现改为 None → 取今天。
     """
+    from datetime import date as _date
+
+    start_date = start_date or "2010-01-01"
+    end_date = end_date or _date.today().isoformat()
     if source == "akshare":
         return _fetch_from_akshare(index_code, start_date, end_date, save)
     elif source == "tushare":

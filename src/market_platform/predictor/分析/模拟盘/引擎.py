@@ -693,7 +693,7 @@ class PaperTradingEngine:
             from market_platform.predictor.脚本.运行管道 import step_data
             step_data()
 
-        from market_platform.predictor.接口.市场分析 import load_feature_df
+        from market_platform.predictor.存储.数据访问 import load_feature_df
 
         df = load_feature_df().sort_values("date").reset_index(drop=True)
         self._refresh_cash_returns(df)
@@ -1288,3 +1288,25 @@ class PaperTradingEngine:
         state["updated_at"] = _utc_now_iso()
         save_paper_trading_state(state, provider=self.provider)
         return self.build_status(state)
+
+
+def run_paper_trading_cycle(
+    *,
+    refresh_data: bool | None = None,
+    force: bool = False,
+    provider: str | None = None,
+) -> dict:
+    """执行一轮模拟盘周期(自 接口/模拟盘 下移:分层修正 C1)。
+
+    分析层不该反向依赖接口层;接口层只做 HTTP 包装。
+    """
+    from market_platform.predictor.配置 import get_config
+
+    cfg = get_config().get("paper_trading", {})
+    if not cfg.get("enabled", True):
+        return {"status": "disabled", "message": "模拟实盘未启用"}
+    引擎 = PaperTradingEngine(provider=provider)
+    result = 引擎.run_cycle(refresh_data=refresh_data, force=force)
+    if isinstance(result, dict) and provider:
+        result["llm_provider"] = provider
+    return result

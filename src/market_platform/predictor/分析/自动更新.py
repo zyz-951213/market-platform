@@ -10,7 +10,7 @@ from loguru import logger
 
 from market_platform.predictor.配置 import get_config
 from market_platform.predictor.存储.数据访问 import load_auto_update_state, save_auto_update_state
-from market_platform.predictor.接口.回测存储 import (
+from market_platform.predictor.存储.回测存储 import (
     backtest_staleness_reasons,
     data_as_of,
     expected_model_label,
@@ -79,7 +79,7 @@ def run_incremental_backtest() -> Dict[str, Any]:
             "llm_cache_stats": getattr(result, "llm_cache_stats", None) if result else None,
         }
 
-    from market_platform.predictor.接口.市场分析 import load_feature_df
+    from market_platform.predictor.存储.数据访问 import load_feature_df
 
     df = load_feature_df().dropna(subset=["label_direction"]).reset_index(drop=True)
     last_signal_date = max(str(s["date"])[:10] for s in old_signals)
@@ -194,7 +194,7 @@ def run_daily_update(*, force: bool = False, skip_paper: bool = False) -> Dict[s
 
         if not skip_paper and auto_cfg.get("run_paper_trading", True):
             from market_platform.predictor.分析.推断.集合元模型 import list_member_providers
-            from market_platform.predictor.接口.模拟盘 import run_paper_trading_cycle
+            from market_platform.predictor.分析.模拟盘.引擎 import run_paper_trading_cycle
 
             logger.info("自动更新 Step 3: 模拟实盘（全渠道）")
             by_provider = {}

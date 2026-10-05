@@ -708,7 +708,7 @@ def build_preview_payload(
     }
 
     try:
-        from market_platform.predictor.接口.策略摘要 import build_strategy_summary
+        from market_platform.predictor.分析.指标.策略摘要 import build_strategy_summary
 
         summary = build_strategy_summary()
         payload["strategy"] = {

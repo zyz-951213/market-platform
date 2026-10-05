@@ -414,3 +414,76 @@ def test_自检_默认配置下前视开关为空():
 
     # 真实配置:切分已改 cycle_tail、走查已开、宏观滞后 15
     assert 自检.检查前视开关() == [], "默认配置不应存在主动打开的前视开关"
+
+
+# ── C1:分层纪律(分析/采集/存储 不得反向依赖接口层) ────────────────────────
+def test_分层方向_分析采集存储不得依赖接口层():
+    """评审 C1:分析层 import 接口层是反向依赖,会把业务逻辑绑死在 HTTP 层。"""
+    from market_platform.core.路径 import 包根
+
+    根 = 包根() / "predictor"
+    违规 = []
+    for 子 in ("分析", "采集", "存储"):
+        for p in (根 / 子).rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            文本 = p.read_text(encoding="utf-8")
+            if "market_platform.predictor.接口" in 文本:
+                违规.append(str(p.relative_to(根)))
+    assert not 违规, f"仍存在反向依赖: {违规}"
+
+
+def test_被下移的能力仍可从接口层导入():
+    """兼容性:接口层同名 shim 必须继续可用(外部脚本/前端依赖这些路径)。"""
+    from market_platform.predictor.接口.准确率分区 import compute_accuracy_partitions  # noqa: F401
+    from market_platform.predictor.接口.回测存储 import load_latest_backtest, strategy_fingerprint  # noqa: F401
+    from market_platform.predictor.接口.分类指标 import compute_classification_metrics  # noqa: F401
+    from market_platform.predictor.接口.策略摘要 import build_strategy_summary  # noqa: F401
+    from market_platform.predictor.接口.模拟盘 import run_paper_trading_cycle  # noqa: F401
+    from market_platform.predictor.接口.市场分析 import load_feature_df  # noqa: F401
+
+
+def test_shim_与实现指向同一函数对象():
+    from market_platform.predictor.分析.指标.准确率分区 import compute_accuracy_partitions as 实现
+    from market_platform.predictor.接口.准确率分区 import compute_accuracy_partitions as shim
+
+    assert 实现 is shim, "shim 必须是同一函数对象,而不是复制实现"
+
+
+# ── C11:采集默认参数不得硬编码到过去 ─────────────────────────────────────
+def test_拉取器默认结束日期不早于今年():
+    import inspect
+    from datetime import date
+
+    from market_platform.predictor.采集.拉取器 import fetch_index_daily
+
+    签名 = inspect.signature(fetch_index_daily)
+    默认 = 签名.parameters["end_date"].default
+    assert 默认 is None or str(默认) >= f"{date.today().year}-01-01", f"默认 end_date={默认} 会静默截断数据"
+
+
+# ── C8:cutoff 空实现必须显式说明,而不是静默 no-op ────────────────────────
+def test_推断渠道的_cutoff_不再静默():
+    """这五个渠道不调 LLM API,因此 cutoff 无意义 —— 但必须显式说明并留痕(评审 C8)。"""
+    import inspect
+
+    from market_platform.predictor.分析.推断.集合元模型 import MetaEnsemblePredictor
+    from market_platform.predictor.分析.推断.纪律策略 import DisciplineRulePredictor
+    from market_platform.predictor.分析.推断.擅长因子 import SpecialtyFactorPredictor
+    from market_platform.predictor.分析.推断.角色调仓 import RoleEnsemblePredictor
+    from market_platform.predictor.分析.推断.语言模型因子 import LlmFactorPredictor
+
+    for 类 in (MetaEnsemblePredictor, DisciplineRulePredictor, SpecialtyFactorPredictor,
+               RoleEnsemblePredictor, LlmFactorPredictor):
+        源码 = inspect.getsource(类.set_api_cutoff_date)
+        assert "只读缓存信号" in 源码 or "不调用 LLM API" in 源码, f"{类.__name__} 的 cutoff 仍是静默 no-op"
+
+
+def test_真实_LM_渠道仍保留_cutoff_语义():
+    """对照:语言模型预测渠道确实会调 API,cutoff 必须真的生效(不能被顺手改空)。"""
+    import inspect
+
+    from market_platform.predictor.分析.推断.语言模型预测 import LLMApiPredictor
+
+    源码 = inspect.getsource(LLMApiPredictor.set_api_cutoff_date)
+    assert "_api_cutoff_date" in 源码, "真实渠道的 cutoff 语义被破坏"

@@ -402,6 +402,12 @@ class LlmFactorPredictor:
         }
 
     def set_api_cutoff_date(self, date: Optional[str]) -> None:
+        """本渠道**不调用 LLM API**(只消费已入库的成员信号),因此 API 截断无意义。
+
+        评审 C8:此处原为空实现(裸 return),外部会误以为"已设置截断"。现显式说明并留痕。
+        """
+        if date:
+            logger.debug("{}: 该渠道只读缓存信号,忽略 api_cutoff_date={}", self.__class__.__name__, date)
         return
 
     def bind_dataframe(self, df: pd.DataFrame) -> None:

@@ -542,7 +542,7 @@ class BacktestEngine:
         if not self.partition_overlay_enabled:
             return
         try:
-            from market_platform.predictor.接口.准确率分区 import _conf_bucket
+            from market_platform.predictor.分析.指标.准确率分区 import _conf_bucket
 
             bucket = str(_conf_bucket(float(max_conf)))
         except Exception:  # noqa: BLE001
@@ -554,7 +554,7 @@ class BacktestEngine:
     def _因果分桶准确率(self, max_conf: float) -> float | None:
         """该置信度桶**历史已结算**的命中率;样本不足返回 None。"""
         try:
-            from market_platform.predictor.接口.准确率分区 import _conf_bucket
+            from market_platform.predictor.分析.指标.准确率分区 import _conf_bucket
 
             bucket = str(_conf_bucket(float(max_conf)))
         except Exception:  # noqa: BLE001
@@ -568,7 +568,7 @@ class BacktestEngine:
         if self._partition_hit_map or not self.partition_overlay_enabled:
             return
         try:
-            from market_platform.predictor.接口.准确率分区 import (
+            from market_platform.predictor.分析.指标.准确率分区 import (
                 compute_accuracy_partitions,
             )
             payload = compute_accuracy_partitions()
@@ -609,7 +609,7 @@ class BacktestEngine:
             if not self._partition_hit_map:
                 return 1.0
             try:
-                from market_platform.predictor.接口.准确率分区 import _conf_bucket
+                from market_platform.predictor.分析.指标.准确率分区 import _conf_bucket
                 bucket = _conf_bucket(float(max_conf))
             except Exception:
                 return 1.0

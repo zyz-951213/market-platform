@@ -58,15 +58,11 @@ def run_paper_trading_cycle(
     force: bool = False,
     provider: str | None = None,
 ) -> Dict[str, Any]:
-    cfg = get_config().get("paper_trading", {})
-    if not cfg.get("enabled", True):
-        return {"status": "disabled", "message": "模拟实盘未启用"}
+    """薄封装:实现已下移到 分析/模拟盘/引擎.py(分层修正 C1)。"""
+    from market_platform.predictor.分析.模拟盘.引擎 import run_paper_trading_cycle as _run
+
     prov = _resolve_provider(provider)
-    engine = PaperTradingEngine(provider=prov)
-    result = engine.run_cycle(refresh_data=refresh_data, force=force)
-    if isinstance(result, dict):
-        result["llm_provider"] = prov
-    return result
+    return _run(refresh_data=refresh_data, force=force, provider=prov)
 
 
 def reset_paper_trading(provider: str | None = None) -> Dict[str, Any]:

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from market_platform.predictor.核心.路径.项目 import data_dir
-
 from pathlib import Path
 from typing import Any, Dict, Optional
-import time
 
 import pandas as pd
 import numpy as np
@@ -14,7 +11,7 @@ from loguru import logger
 
 from market_platform.predictor.配置 import get_config, get_bar_meta
 from market_platform.predictor.分析.推断.语言模型预测 import LLMApiPredictor
-from market_platform.predictor.存储.数据访问 import load_index_features, load_latest_backtest_metrics
+from market_platform.predictor.存储.数据访问 import load_latest_backtest_metrics
 from market_platform.predictor.接口.回测存储 import (
     backtest_stale_message as format_backtest_stale_message,
     backtest_staleness_reasons,
@@ -26,38 +23,15 @@ from market_platform.predictor.接口.自动更新 import fetch_auto_update_stat
 
 
 def processed_path() -> Path:
-    cfg = get_config()
-    return data_dir() / "processed" / f"{cfg['data']['index_code']}_with_features.parquet"
+    from market_platform.predictor.存储.数据访问 import 特征产物路径
 
-
-_FEATURE_DF_CACHE: dict[str, Any] = {"key": None, "mtime": None, "df": None}
+    return 特征产物路径()
 
 
 def load_feature_df() -> pd.DataFrame:
-    """加载特征表；进程内短缓存，避免 overview/charts 重复打库。"""
-    cfg = get_config()
-    code = cfg["data"]["index_code"]
-    # parquet 回退路径的 mtime；PG 主路径用空 mtime + 60s TTL
-    path = processed_path()
-    mtime = path.stat().st_mtime if path.exists() else None
-    cache_key = code
-    now = time.time()
-    hit = _FEATURE_DF_CACHE
-    if (
-        hit.get("df") is not None
-        and hit.get("key") == cache_key
-        and hit.get("mtime") == mtime
-        and (mtime is not None or now - float(hit.get("loaded_at") or 0) < 60)
-    ):
-        return hit["df"]
+    from market_platform.predictor.存储.数据访问 import load_feature_df as _load
 
-    df = load_index_features(code)
-    if df is None or df.empty:
-        raise FileNotFoundError("特征数据不存在，请先运行: market-predictor pipeline -- --step data")
-    out = df.sort_values("date").reset_index(drop=True)
-    _FEATURE_DF_CACHE.update({"key": cache_key, "mtime": mtime, "df": out, "loaded_at": now})
-    return out
-
+    return _load()
 
 def get_overview() -> Dict[str, Any]:
     df = load_feature_df()
