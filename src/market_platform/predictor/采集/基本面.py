@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from market_platform.predictor.核心.路径.项目 import data_dir
 
 import re
 from typing import Callable, Dict, List

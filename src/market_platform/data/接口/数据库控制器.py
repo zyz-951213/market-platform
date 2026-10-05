@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from market_platform.core.路径 import 数据库配置
-from pathlib import Path
 import yaml
 from ..存储.数据库 import DatabaseManager
 

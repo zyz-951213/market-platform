@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -701,7 +701,7 @@ class PaperTradingEngine:
         self._restore_allocator(state)
         rt = _runtime_from_dict(state)
         last_processed = state.get("last_processed_date")
-        capital = float(state.get("initial_capital", self.initial_capital))
+        _capital = float(state.get("initial_capital", self.initial_capital))  # 未被使用,保留原式以便对比
 
         if last_processed:
             mask = pd.to_datetime(df["date"]) > pd.Timestamp(last_processed)

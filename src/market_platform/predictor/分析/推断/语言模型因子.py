@@ -15,7 +15,7 @@ from loguru import logger
 
 from market_platform.predictor.配置 import get_config
 from market_platform.predictor.存储.数据访问 import load_index_features
-from market_platform.predictor.分析.推断.集合元模型 import load_ensemble_panel, list_member_providers
+from market_platform.predictor.分析.推断.集合元模型 import load_ensemble_panel
 from market_platform.predictor.分析.特征.状态路由 import regime_series, REGIME_BULL, REGIME_BEAR, REGIME_RANGE
 
 

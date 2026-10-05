@@ -1,6 +1,5 @@
 """数据更新器基类 + 公共工具函数"""
 from __future__ import annotations
-from datetime import date, datetime
 import psycopg
 
 class DataUpdater:

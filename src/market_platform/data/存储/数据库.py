@@ -162,7 +162,7 @@ class DatabaseManager:
             "top_tables": top_tables,
             "watermarks": watermarks,
         }
-    
+
     def get_table_schema(self, db_name: str, schema_name: str, table_name: str) -> list[dict]:
         full_name = f'"{schema_name}"."{table_name}"'
         r = self._execute(db_name, """
@@ -173,15 +173,15 @@ class DatabaseManager:
                    CASE WHEN a.attidentity = 'a' THEN 'YES' ELSE '' END as is_identity,
                    CASE WHEN ct.contype = 'p' THEN 'PK' ELSE '' END as is_pk
             FROM pg_catalog.pg_attribute a
-            LEFT JOIN pg_catalog.pg_constraint ct 
-                ON ct.conrelid = a.attrelid AND ct.contype = 'p' 
+            LEFT JOIN pg_catalog.pg_constraint ct
+                ON ct.conrelid = a.attrelid AND ct.contype = 'p'
                 AND a.attnum = ANY(ct.conkey)
             WHERE a.attrelid = %s::regclass
               AND a.attnum > 0 AND NOT a.attisdropped
             ORDER BY a.attnum
         """, (full_name,))
         return [dict(zip(r["columns"], row)) for row in r["rows"]]
-    
+
     def get_indexes(self, db_name: str, schema_name: str, table_name: str) -> list[dict]:
         r = self._execute(db_name, """
             SELECT indexname, indexdef FROM pg_indexes
@@ -189,7 +189,7 @@ class DatabaseManager:
             ORDER BY indexname
         """, (table_name, schema_name))
         return [dict(zip(r["columns"], row)) for row in r["rows"]]
-    
+
     def get_foreign_keys(self, db_name: str, schema_name: str, table_name: str) -> list[dict]:
         r = self._execute(db_name, """
             SELECT tc.constraint_name, kcu.column_name,
@@ -205,7 +205,7 @@ class DatabaseManager:
               AND tc.table_schema = %s
         """, (table_name, schema_name))
         return [dict(zip(r["columns"], row)) for row in r["rows"]]
-    
+
     def get_table_stats(self, db_name: str, schema_name: str, table_name: str, exact: bool = False) -> dict:
         full_name = f'"{schema_name}"."{table_name}"'
         info = {

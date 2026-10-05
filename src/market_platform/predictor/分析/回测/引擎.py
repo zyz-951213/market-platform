@@ -517,7 +517,6 @@ class BacktestEngine:
             return
         try:
             from market_platform.predictor.接口.准确率分区 import (
-                _conf_bucket,
                 compute_accuracy_partitions,
             )
             payload = compute_accuracy_partitions()

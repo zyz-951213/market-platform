@@ -1,14 +1,13 @@
 """
 今日预测 — 快速查看最新一期 LLM 研判结果
 
-用法: python 后端/脚本/今日研判.py
+用法: python -m market_platform.predictor.脚本.今日研判
 """
 
 from __future__ import annotations
 
 
 import pandas as pd
-from loguru import logger
 
 try:
     from dotenv import load_dotenv

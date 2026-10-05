@@ -19,7 +19,6 @@ from market_platform.predictor.接口.回测存储 import (
     backtest_stale_message as format_backtest_stale_message,
     backtest_staleness_reasons,
     expected_model_label,
-    load_latest_backtest,
 )
 from market_platform.predictor.接口.分类指标 import compute_classification_metrics
 from market_platform.predictor.接口.策略摘要 import build_strategy_summary

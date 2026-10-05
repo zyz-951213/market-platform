@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -60,7 +60,7 @@ def get_discipline_config() -> dict:
 
 def _style_score(preds: np.ndarray) -> Tuple[float, dict]:
     """越高越「健康」：涨跌对称、不太偏平。"""
-    n = max(len(preds), 1)
+    _ = max(len(preds), 1)  # 保留原式以求语义不变,变量未被使用
     up = float((preds == 1).mean())
     dn = float((preds == -1).mean())
     flat = float((preds == 0).mean())

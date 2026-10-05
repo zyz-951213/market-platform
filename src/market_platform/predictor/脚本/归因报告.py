@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from market_platform.predictor.配置 import get_config, load_config
+from market_platform.predictor.配置 import load_config
 from market_platform.predictor.接口.回测存储 import load_latest_backtest
 from market_platform.predictor.接口.归因 import compute_attribution
 

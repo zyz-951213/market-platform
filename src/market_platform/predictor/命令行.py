@@ -42,7 +42,7 @@ def run_pg_init() -> None:
     from market_platform.predictor.存储.数据访问 import init_schema, pg_enabled
 
     if not pg_enabled():
-        logger.error("PostgreSQL 未启用，请配置 后端/配置/数据库.yaml 或 DATABASE_URL")
+        logger.error("PostgreSQL 未启用，请在 config/数据库.yaml 配置连接,或设置环境变量 DATABASE_URL")
         raise SystemExit(1)
     init_schema()
     logger.info("PostgreSQL schema 已初始化")
@@ -67,7 +67,7 @@ def run_pg_migrate() -> None:
     from market_platform.predictor.存储.数据访问 import migrate_files_to_pg, pg_enabled
 
     if not pg_enabled():
-        logger.error("PostgreSQL 未启用，请配置 后端/配置/数据库.yaml 或 DATABASE_URL")
+        logger.error("PostgreSQL 未启用，请在 config/数据库.yaml 配置连接,或设置环境变量 DATABASE_URL")
         raise SystemExit(1)
     stats = migrate_files_to_pg()
     logger.info("迁移完成: {}", stats)

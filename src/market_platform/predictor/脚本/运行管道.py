@@ -2,14 +2,13 @@
 一键跑全流程的 pipeline 脚本
 
 用法:
-    python 后端/脚本/运行管道.py --step all
+    python -m market_platform.predictor.脚本.运行管道 --step all
     market-predictor pipeline -- --step data
 """
 
-from market_platform.predictor.核心.路径.项目 import data_dir, repo_root
+from market_platform.predictor.核心.路径.项目 import repo_root
 
 import argparse
-import sys
 import time
 from typing import Optional
 
@@ -25,11 +24,10 @@ from loguru import logger
 
 from market_platform.predictor.配置 import get_config
 from market_platform.predictor.核心.工具 import setup_logging
-from market_platform.predictor.采集 import fetch_index_daily, load_local_data, load_or_fetch_index, clean_daily_data, build_feature_pipeline
+from market_platform.predictor.采集 import load_or_fetch_index, clean_daily_data, build_feature_pipeline
 from market_platform.predictor.采集 import train_val_split, log_split_summary, resample_bars, merge_extra_features
-from market_platform.predictor.采集.拆分 import temporal_train_val_split
 from market_platform.predictor.分析.推断 import LLMApiPredictor
-from market_platform.predictor.分析.回测 import BacktestEngine, BacktestResult, summary_report
+from market_platform.predictor.分析.回测 import BacktestEngine, BacktestResult
 from market_platform.predictor.接口.回测存储 import save_backtest_result
 from market_platform.predictor.存储.数据访问 import load_index_features, save_index_features
 
@@ -99,7 +97,7 @@ def step_explore():
     logger.info("🔍 数据探索")
     logger.info("=" * 50)
 
-    logger.info(f"\n📊 数据概览:")
+    logger.info("\n📊 数据概览:")
     logger.info(f"  总记录数: {len(df)}")
     logger.info(f"  时间范围: {df['date'].min()} → {df['date'].max()}")
     logger.info(f"  总列数:   {len(df.columns)}")
@@ -107,7 +105,7 @@ def step_explore():
 
     if "label_direction" in df.columns:
         label_dist = df["label_direction"].value_counts()
-        logger.info(f"\n📈 标签分布:")
+        logger.info("\n📈 标签分布:")
         logger.info(f"  涨 (+1): {label_dist.get(1, 0)} ({label_dist.get(1, 0)/len(df):.1%})")
         logger.info(f"  平 (0):  {label_dist.get(0, 0)} ({label_dist.get(0, 0)/len(df):.1%})")
         logger.info(f"  跌 (-1): {label_dist.get(-1, 0)} ({label_dist.get(-1, 0)/len(df):.1%})")
@@ -120,7 +118,7 @@ def step_explore():
             logger.info(f"  {line}")
         logger.info("  ...")
 
-    logger.info(f"\n📋 特征列列表:")
+    logger.info("\n📋 特征列列表:")
     exclude = {"date", "label_direction", "label_return", "open", "high", "low", "close", "volume"}
     features = [c for c in df.columns if c not in exclude]
     for f in features:

@@ -9,7 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import pandas as pd
-from market_platform.agents.settings import AppConfig, PaperTradingConfig
+from market_platform.agents.settings import AppConfig
 from market_platform.agents.分析.回测.回测引擎 import BacktestFriction, _trade_cost
 from market_platform.agents.分析.回测.风控 import constrain_portfolio_weights
 from market_platform.agents.存储 import data_access as store
@@ -22,7 +22,6 @@ from market_platform.agents.核心.任务.交易日历 import (
     prev_trading_day,
 )
 from market_platform.agents.核心.通知.分发 import dispatch_notification
-from market_platform.agents.采集.股票池 import infer_market
 from market_platform.agents.核心.路径.项目 import data_dir, profile_path
 
 logger = logging.getLogger(__name__)

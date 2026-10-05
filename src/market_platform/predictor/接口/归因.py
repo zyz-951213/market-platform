@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from market_platform.predictor.接口.回测存储 import load_backtest_for_provider, provider_from_model_label
-from market_platform.predictor.配置 import load_config, get_config
+from market_platform.predictor.配置 import load_config
 from market_platform.predictor.存储.数据访问 import load_index_features
 from market_platform.predictor.分析.提示词.构建器 import get_evaluation_since
 

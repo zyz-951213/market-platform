@@ -16,14 +16,8 @@ PROJECT_ROOT = Path.cwd()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from market_platform.predictor.配置 import get_config
 from market_platform.predictor.核心.工具 import setup_logging
-from market_platform.predictor.采集 import fetch_index_daily, load_local_data, clean_daily_data, build_feature_pipeline
-from market_platform.predictor.分析.推断 import TransformerPredictor, LLMApiPredictor
-from market_platform.predictor.分析.回测 import BacktestEngine, summary_report
 
-import pandas as pd
-import numpy as np
 
 def main():
     setup_logging()

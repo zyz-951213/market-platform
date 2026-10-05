@@ -368,7 +368,6 @@ def _regime_focus_lines(regime: str, end_row: pd.Series) -> List[str]:
     from market_platform.predictor.分析.特征.状态路由 import (
         REGIME_BEAR,
         REGIME_BULL,
-        REGIME_RANGE,
         price_flow_divergence,
         regime_zh,
     )

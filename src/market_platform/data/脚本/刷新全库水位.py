@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 from market_platform.core.配置 import 数据库DSN
+from market_platform.core.路径 import schema根
 
 import argparse
 import sys
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 import psycopg

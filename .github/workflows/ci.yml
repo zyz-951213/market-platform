@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  python:
+    name: Python(静态检查 + 平台契约测试)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖(仅测试所需)
+        run: |
+          python -m pip install --upgrade pip
+          # 平台契约测试只依赖 fastapi/starlette/pydantic/yaml/pandas,不装 torch 等重依赖
+          pip install "fastapi>=0.110" "uvicorn>=0.27" "pydantic>=2" "pyyaml>=6" \
+                      "pandas>=2.1" "numpy>=1.26" "pytest>=8" "ruff>=0.3" "httpx>=0.27" \
+                      "python-dotenv>=1.0" "scikit-learn>=1.4"
+
+      - name: 静态检查
+        run: ruff check src/market_platform tests
+
+      - name: 契约测试
+        run: pytest tests --no-header
+
+  web:
+    name: 前端(统一站点构建)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安装依赖(以行为分析模块的依赖为准,三域共用)
+        working-directory: web/模块/行为分析
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable && pnpm install --frozen-lockfile
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: 链接站点壳依赖并构建统一站点
+        run: |
+          mkdir -p web/node_modules
+          for p in vite vue; do ln -sfn "../模块/行为分析/node_modules/$p" "web/node_modules/$p"; done
+          mkdir -p web/node_modules/@vitejs
+          ln -sfn "../../模块/行为分析/node_modules/@vitejs/plugin-vue" "web/node_modules/@vitejs/plugin-vue"
+          node web/构建.mjs
+
+      - name: 校验产物
+        run: |
+          test -f web/dist/index.html
+          test -f web/dist/数据底座/index.html
+          test -f web/dist/行为分析/index.html
+          test -f web/dist/指数预测/index.html

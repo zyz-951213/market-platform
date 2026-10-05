@@ -1,6 +1,6 @@
 """AKShare 数据更新 — 完整字段覆盖重写"""
-from datetime import date, datetime
-from .数据更新器 import _next_id, _to_n, _to_i, _parse_month, _insert, _existing_set, _existing_key_set
+from datetime import date
+from .数据更新器 import _to_n, _parse_month, _insert, _existing_set, _existing_key_set
 
 # ── 1. 货币供应量 ──
 def update_money_supply(updater) -> str:

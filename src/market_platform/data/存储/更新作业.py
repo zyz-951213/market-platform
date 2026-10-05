@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from market_platform.core.配置 import 数据库DSN
 
-import json
 import threading
 import traceback
 import uuid

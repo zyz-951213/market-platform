@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from market_platform.agents.settings import AppConfig, NotifyConfig
+from market_platform.agents.settings import AppConfig
 from market_platform.agents.分析.信号.每日 import classify_signal_action
 from market_platform.agents.存储 import data_access as store
 from market_platform.agents.核心.路径.项目 import data_dir, profile_path

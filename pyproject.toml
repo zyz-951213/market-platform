@@ -34,15 +34,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0.0", "ruff>=0.3.0"]
+dev = ["pytest>=8.0.0", "ruff>=0.3.0", "httpx>=0.27.0"]
 postgres = ["psycopg[binary]>=3.1.0"]
 network = ["curl_cffi>=0.6.0"]
 optional = ["sentence-transformers>=2.2.0", "jupyter>=1.0.0", "ipykernel>=6.0.0", "seaborn>=0.12.0"]
 
 [project.scripts]
+# 统一入口(推荐):market-platform <web|data|agents|predictor|健康>
+market-platform = "market_platform.cli:main"
+market = "market_platform.cli:main"
+# 兼容旧入口(已安装的 systemd 单元仍使用)
 market-agents = "market_platform.agents.cli:main"
 market-predictor = "market_platform.predictor.命令行:main"
-market-platform = "market_platform.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -51,3 +54,32 @@ include = ["market_platform*"]
 [tool.setuptools.package-data]
 "market_platform.agents" = ["存储/schema.sql"]
 "market_platform.predictor" = ["存储/schema.sql"]
+
+# ── 测试 ────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py", "测试_*.py"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+# ── 静态检查 ────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["web", "packages", "docs/归档"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# E501 行长:中文注释场景下按行宽硬切反而伤可读性,交由评审
+# E701/E702 一行多语句:历史代码风格,统一保留
+# E402 模块级导入不在顶部:多处需先设置 sys.path / 延迟导入重依赖
+ignore = ["E501", "E701", "E702", "E402", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# 运维脚本与旧存储层:批量数据管道里 F841/F601 为历史遗留,单独立项清理
+"src/market_platform/data/存储/*" = ["F841", "F601", "F811", "E722"]
+"src/market_platform/predictor/脚本/*" = ["F841"]
+"src/market_platform/agents/脚本/运维/*" = ["F841", "E722"]

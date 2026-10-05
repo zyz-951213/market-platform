@@ -65,8 +65,6 @@ FACTOR_SPECS: Dict[str, tuple] = {
     "momentum_20d": ("20期动量", "{:.2f}", "%"),
     "macd_hist": ("MACD柱", "{:.4f}", ""),
     "volatility_20d": ("20期波动率", "{:.2f}", "%"),
-    "idx_roe_w_change": ("ROE变化", "{:.2f}", ""),
-    "idx_profit_growth_w_ma2q": ("利润增速(平滑)", "{:.2f}", "%"),
     "margin_balance_change": ("融资余额变化", "{:.2f}", ""),
     "north_flow_ma_20": ("北向20期均值", "{:.0f}", "元"),
     "idx_roe_w_change": ("ROE变化", "{:.2f}", "%"),
@@ -391,7 +389,7 @@ def _format_dual_freq_task() -> List[str]:
     days = get_week_horizon()
     return [
         "【双通道研判任务】",
-        f"1. 日频：判断下一交易日涨/跌/平（口径见上文）",
+        "1. 日频：判断下一交易日涨/跌/平（口径见上文）",
         f"2. 周频：判断随后 {days} 个交易日累计涨/跌/平（口径见上文）",
         "  日频与周频可不一致；若冲突须在 reasoning 中说明依据。",
     ]

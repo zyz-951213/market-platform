@@ -19,6 +19,8 @@ __all__ = [
     "RiskConfig",
     "apply_risk_to_states",
     "constrain_portfolio_weights",
+    "drawdown_position_scale",
+    "latest_risk_snapshot",
     "run_state_backtest",
     "OptimizeResult",
     "optimize_position_map",

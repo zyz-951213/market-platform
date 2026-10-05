@@ -379,7 +379,7 @@ class MetaEnsemblePredictor:
         metas: List[dict] = []
         clf = None
         last_fit = -10**9
-        classes = np.array([0, 1, 2])
+        _classes = np.array([0, 1, 2])
 
         for i in range(n):
             meta: Dict[str, Any] = {"rule": "stack", "mode": "stack"}

@@ -6,7 +6,6 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timedelta
-from pathlib import Path
 
 import pandas as pd
 from market_platform.agents.settings import AppConfig, DataConfig, FeatureConfig

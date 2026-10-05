@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from market_platform.predictor.配置 import get_config
-from market_platform.predictor.分析.提示词.构建器 import LABEL_TO_TEXT, TEXT_TO_LABEL
+from market_platform.predictor.分析.提示词.构建器 import LABEL_TO_TEXT
 
 
 def get_calibration_config() -> dict:

@@ -5,7 +5,6 @@
 from market_platform.predictor.核心.路径.项目 import data_dir
 
 import pandas as pd
-from pathlib import Path
 from loguru import logger
 from typing import Optional
 

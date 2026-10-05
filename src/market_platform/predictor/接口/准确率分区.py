@@ -83,7 +83,7 @@ def _attach_signal_slices(signals: pd.DataFrame, feat: pd.DataFrame) -> pd.DataF
     s["conf_bucket"] = s["confidence"].astype(float).map(_conf_bucket)
     s["pred"] = s["prediction"].astype(int).map({-1: "↓", 0: "→", 1: "↑"})
     if "above_sma60" in s.columns:
-        s["above_sma60"] = s["above_sma60"].map({0: "低于SMA60", 1: "高于SMA60", 0.0: "低于SMA60", 1.0: "高于SMA60"})
+        s["above_sma60"] = s["above_sma60"].map({0: "低于SMA60", 1: "高于SMA60"})
     return s
 
 
