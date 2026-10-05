@@ -1,0 +1,11 @@
+[Unit]
+Description=Market Predictor Paper Trading Timer (Friday 16:30, weekly decision)
+Requires=market-predictor-paper.service
+
+[Timer]
+OnCalendar=Fri *-*-* 16:30:00
+Persistent=true
+Unit=market-predictor-paper.service
+
+[Install]
+WantedBy=timers.target

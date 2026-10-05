@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+*.so
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+
+# 运行时数据与产出（本地生成，不提交）
+后端/数据/*
+!后端/数据/.gitkeep
+后端/outputs/*
+!后端/outputs/.gitkeep
+# 旧路径兼容
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
+logs/
+
+# 产物与缓存
+*.parquet
+*.csv
+*.png
+*.log
+.cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 前端（Node / Vite）
+node_modules/
+前端/node_modules/
+前端/dist/
+*.tsbuildinfo
+
+# Python 打包 dist（勿与前端 dist 混淆；根级 dist/ 多为 wheel）
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/

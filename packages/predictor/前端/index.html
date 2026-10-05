@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title id="page-title">Market Predictor</title>
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <nav class="navbar">
+    <div class="navbar-brand">Market Predictor</div>
+    <div class="navbar-tabs">
+      <div class="navbar-tab active" data-page="page-overview">概览 · 研判</div>
+      <div class="navbar-tab" data-page="page-backtest">回测 · 资金</div>
+      <div class="navbar-tab" data-page="page-paper">模拟实盘</div>
+      <div class="navbar-tab" data-page="page-attribution">归因分析</div>
+    </div>
+    <div class="navbar-actions">
+      <span class="badge" id="provider-badge">API</span>
+      <span class="hint" id="view-only-badge">仅展示</span>
+      <button id="refresh-btn" class="btn secondary small">刷新</button>
+    </div>
+  </nav>
+
+  <!-- ────────── 页面一：概览 · 研判 ────────── -->
+  <div class="page active" id="page-overview">
+    <section class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">最新收盘</div>
+        <div class="stat-value" id="stat-close">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">数据区间</div>
+        <div class="stat-value small" id="stat-range">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">年化收益</div>
+        <div class="stat-value" id="stat-annual">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">外盘 / 宏观</div>
+        <div class="stat-value small" id="stat-overseas">--</div>
+      </div>
+    </section>
+
+    <section class="strategy-bar" id="overview-strategy-bar">
+      <div class="strategy-bar-label">策略配置：</div>
+      <div class="strategy-bar-item"><span class="hint">研判模型</span><strong id="os-api">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">模板</span><strong id="os-prompt">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">主线</span><strong id="os-freq">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">信号</span><strong id="os-class">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">仓位</span><strong id="os-mode">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">底仓</span><strong id="os-base">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">校准</span><strong id="os-calib">--</strong></div>
+      <div class="strategy-bar-item"><span class="hint">配置</span><strong id="os-cash">--</strong></div>
+    </section>
+
+    <div class="main-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>价格走势</h2>
+          <span class="hint" id="price-hint">加载中…</span>
+        </div>
+        <div id="price-chart" class="chart"></div>
+      </section>
+
+      <section class="panel" id="analysis-panel">
+        <div class="panel-head">
+          <h2>LLM 研判</h2>
+          <span class="hint">只读展示 · 不触发 live 调用</span>
+        </div>
+        <div class="form-row analysis-controls">
+          <label for="analyze-date" id="analyze-date-label">决策日</label>
+          <input id="analyze-date" type="date" />
+          <span class="hint">切换日期仅刷新下方研判信息窗口</span>
+        </div>
+        <p class="hint analysis-scope-hint">
+          前端为只读看板：不发起单渠道/多渠道研判、不自动更新数据、不执行模拟交易。
+        </p>
+        <div id="analysis-result" class="analysis-result empty">加载配置中...</div>
+      </section>
+    </div>
+
+    <section class="panel full-width" id="prompt-panel">
+      <div class="panel-head">
+        <h2>研判信息窗口</h2>
+        <div class="prompt-toolbar">
+          <span class="hint" id="preview-date-hint">与上方决策日联动</span>
+        </div>
+      </div>
+      <div class="preview-meta" id="preview-meta"></div>
+      <div class="preview-tabs" id="preview-tabs"></div>
+      <div class="preview-body" id="preview-body"></div>
+    </section>
+  </div>
+
+  <!-- ────────── 页面二：回测 · 资金 ────────── -->
+  <div class="page" id="page-backtest">
+    <section class="panel full-width">
+      <div class="panel-head">
+        <h2>回测结果</h2>
+        <div class="prompt-toolbar">
+          <label for="backtest-provider" class="hint">模型</label>
+          <select id="backtest-provider" title="切换已入库回测渠道">
+            <option value="">加载中…</option>
+          </select>
+          <span class="hint" id="backtest-period">加载中...</span>
+        </div>
+      </div>
+      <div id="backtest-freq-warning" class="freq-warning hidden"></div>
+
+      <div id="strategy-summary" class="strategy-summary hidden"></div>
+
+      <div class="backtest-metrics" id="backtest-metrics">
+        <div class="metric-chip"><span>组合收益</span><strong id="bt-total">--</strong></div>
+        <div class="metric-chip"><span>进攻组贡献</span><strong id="bt-strat-ret">--</strong></div>
+        <div class="metric-chip accent"><span>防守+现金流</span><strong id="bt-cash-ret">--</strong></div>
+        <div class="metric-chip"><span>大盘收益</span><strong id="bt-bench">--</strong></div>
+        <div class="metric-chip accent"><span>超额收益</span><strong id="bt-excess">--</strong></div>
+        <div class="metric-chip accent"><span>年化收益</span><strong id="bt-annual">--</strong></div>
+        <div class="metric-chip"><span>最大回撤</span><strong id="bt-dd">--</strong></div>
+        <div class="metric-chip"><span>夏普比率</span><strong id="bt-sharpe">--</strong></div>
+        <div class="metric-chip"><span>平均仓位</span><strong id="bt-avg-pos">--</strong></div>
+        <div class="metric-chip"><span>方向准确率</span><strong id="bt-dir-acc">--</strong></div>
+        <div class="metric-chip"><span>调仓次数</span><strong id="bt-trades">--</strong></div>
+        <div class="metric-chip"><span>持仓占比</span><strong id="bt-pos">--</strong></div>
+        <div class="metric-chip"><span>准确率</span><strong id="bt-acc">--</strong></div>
+      </div>
+
+      <div id="channel-summary" class="channel-summary">
+        <div class="chart-title-row">
+          <div class="chart-title">回测对比</div>
+          <span class="hint" id="channel-summary-hint">点击行切换下方曲线</span>
+        </div>
+        <div class="channel-summary-table-wrap">
+          <table class="channel-summary-table" id="channel-summary-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>模型</th>
+                <th>总收益</th>
+                <th>年化</th>
+                <th>夏普</th>
+                <th>最大回撤</th>
+                <th>胜率</th>
+                <th>调仓</th>
+                <th>入库</th>
+              </tr>
+            </thead>
+            <tbody id="channel-summary-body">
+              <tr><td colspan="9" class="empty-hint">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="accuracy-partitions" class="channel-summary">
+        <div class="chart-title-row">
+          <div class="chart-title">按市场状态切片的准确率</div>
+          <div class="prompt-toolbar">
+            <span class="hint" id="acc-part-regime">识别当前市场状态…</span>
+            <select id="acc-part-dim" title="切换切片维度"></select>
+          </div>
+        </div>
+        <p class="hint acc-part-note" id="acc-part-note">
+          波动 / 趋势 / 均线 / RSI 仅作事后分组标签，用于看各渠道在何种环境下更准；未输入 LLM Prompt（量价走 Transformer）。
+        </p>
+        <div id="acc-part-routing" class="acc-routing"></div>
+        <div id="acc-part-sweet" class="acc-sweet"></div>
+        <div class="channel-summary-table-wrap">
+          <table class="channel-summary-table acc-heat-table" id="acc-heat-table">
+            <thead id="acc-heat-head"></thead>
+            <tbody id="acc-heat-body">
+              <tr><td class="empty-hint">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="backtest-charts-grid">
+        <div class="chart-block full-row">
+          <div class="chart-title-row">
+            <div class="chart-title" id="equity-chart-title">净值曲线（策略 vs 买入持有）</div>
+            <div class="compare-toolbar">
+              <span class="hint">模型对比</span>
+              <div id="compare-provider-picks" class="compare-provider-picks"></div>
+              <button id="compare-btn" class="btn secondary small">对比</button>
+            </div>
+          </div>
+          <div id="compare-metrics" class="compare-metrics hidden"></div>
+          <div id="equity-chart" class="chart"></div>
+          <div id="compare-chart" class="chart compare-secondary"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">回撤对比</div>
+          <div id="drawdown-chart" class="chart short"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">沪深300权重</div>
+          <div id="position-chart" class="chart short"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">预测分布 & 混淆矩阵</div>
+          <div class="dist-grid">
+            <div id="pred-dist-chart" class="chart mini"></div>
+            <div id="confusion-chart" class="chart mini"></div>
+          </div>
+        </div>
+        <div class="chart-block full-row hidden" id="cash-assets-block">
+          <div class="chart-title-row">
+            <div class="chart-title" id="cash-assets-title">多资产净值参考</div>
+            <span class="hint" id="cash-assets-hint">六袖各自满仓净值；虚线为等权六袖参考</span>
+          </div>
+          <div id="cash-assets-config" class="cash-assets-config"></div>
+          <div id="cash-assets-metrics" class="cash-assets-metrics"></div>
+          <div id="cash-assets-chart" class="chart"></div>
+        </div>
+        <div class="chart-block full-row" id="allocation-block">
+          <div class="chart-title-row">
+            <div class="chart-title">多资产配置权重</div>
+            <div class="allocation-toolbar">
+              <button type="button" class="alloc-mode-btn" data-mode="split">分项视图</button>
+              <button type="button" class="alloc-mode-btn active" data-mode="stack">堆叠总览</button>
+            </div>
+          </div>
+          <p class="allocation-desc" id="allocation-hint">组合六袖绝对权重堆叠（沪深300 / 纳指 / 金 / 债 / 货币 / 逆回购）</p>
+          <div id="allocation-metrics" class="cash-assets-metrics"></div>
+          <div id="allocation-split-view" class="allocation-split-view hidden">
+            <div class="allocation-subchart">
+              <div class="subchart-title" id="allocation-main-title">组合权重概览</div>
+              <div id="allocation-main-chart" class="chart allocation-half"></div>
+            </div>
+            <div class="allocation-subchart" id="allocation-idle-wrap">
+              <div class="subchart-title" id="allocation-idle-title">品种拆分</div>
+              <div id="allocation-idle-chart" class="chart allocation-half"></div>
+            </div>
+          </div>
+          <div id="allocation-stack-view" class="allocation-stack-view">
+            <div id="allocation-chart" class="chart"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ────────── 页面：模拟实盘 ────────── -->
+  <div class="page" id="page-paper">
+    <section class="stats-grid" id="paper-stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">模拟总资产</div>
+        <div class="stat-value" id="paper-equity">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">累计收益</div>
+        <div class="stat-value" id="paper-return">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">当前仓位</div>
+        <div class="stat-value" id="paper-position">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">最新研判</div>
+        <div class="stat-value small" id="paper-signal">--</div>
+      </div>
+    </section>
+
+    <section class="panel full-width">
+      <div class="panel-head">
+        <h2>模拟实盘</h2>
+        <div class="prompt-toolbar">
+          <label for="paper-provider" class="hint">模型</label>
+          <select id="paper-provider" title="各完整 model 独立模拟账户（只读）">
+            <option value="">加载中…</option>
+          </select>
+          <span class="hint" id="paper-hint">只读展示模拟账户，不触发交易</span>
+          <button id="paper-refresh-btn" class="btn secondary small">刷新</button>
+        </div>
+      </div>
+
+      <div class="paper-metrics" id="paper-metrics">
+        <div class="metric-chip"><span>初始资金</span><strong id="paper-initial">--</strong></div>
+        <div class="metric-chip"><span>总资产</span><strong id="paper-strategy-value">--</strong></div>
+        <div class="metric-chip"><span>沪深300权重</span><strong id="paper-idle-total">--</strong></div>
+        <div class="metric-chip"><span>调仓次数</span><strong id="paper-trades">--</strong></div>
+        <div class="metric-chip"><span>最近处理</span><strong id="paper-last-date">--</strong></div>
+      </div>
+      <div class="paper-idle-alloc" id="paper-idle-alloc"></div>
+
+      <div class="chart-title">收益明细</div>
+      <div class="backtest-metrics paper-performance-metrics" id="paper-performance-metrics">
+        <div class="metric-chip"><span>模拟区间</span><strong id="paper-period">--</strong></div>
+        <div class="metric-chip accent"><span>累计收益</span><strong id="paper-perf-total">--</strong></div>
+        <div class="metric-chip"><span>进攻组贡献</span><strong id="paper-perf-strat">--</strong></div>
+        <div class="metric-chip accent"><span>防守+现金流</span><strong id="paper-perf-cash">--</strong></div>
+        <div class="metric-chip"><span>大盘收益</span><strong id="paper-perf-bench">--</strong></div>
+        <div class="metric-chip accent"><span>超额收益</span><strong id="paper-perf-excess">--</strong></div>
+        <div class="metric-chip accent"><span>年化收益</span><strong id="paper-perf-annual">--</strong></div>
+        <div class="metric-chip"><span>最大回撤</span><strong id="paper-perf-dd">--</strong></div>
+        <div class="metric-chip"><span>大盘回撤</span><strong id="paper-perf-bench-dd">--</strong></div>
+        <div class="metric-chip"><span>夏普比率</span><strong id="paper-perf-sharpe">--</strong></div>
+        <div class="metric-chip"><span>胜率</span><strong id="paper-perf-win">--</strong></div>
+        <div class="metric-chip"><span>沪深300均权</span><strong id="paper-perf-avg-pos">--</strong></div>
+        <div class="metric-chip"><span>有仓占比</span><strong id="paper-perf-in-market">--</strong></div>
+        <div class="metric-chip"><span>累计交易成本</span><strong id="paper-perf-cost">--</strong></div>
+      </div>
+
+      <div class="backtest-charts-grid">
+        <div class="chart-block full-row">
+          <div class="chart-title">模拟净值曲线（组合 vs 买入持有）</div>
+          <div id="paper-equity-chart" class="chart"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">回撤对比</div>
+          <div id="paper-drawdown-chart" class="chart short"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title" id="paper-position-chart-title">进攻组权重</div>
+          <div id="paper-position-chart" class="chart short"></div>
+        </div>
+      </div>
+
+      <div id="paper-cash-block" class="paper-cash-block hidden">
+        <div class="chart-title">多资产配置明细</div>
+        <p class="hint" id="paper-cash-hint">组合六袖绝对权重与累计收益贡献</p>
+        <div id="paper-cash-breakdown" class="cash-assets-metrics"></div>
+        <div id="paper-cash-weights" class="paper-metrics"></div>
+        <div id="paper-cash-chart" class="chart short"></div>
+      </div>
+
+      <div class="paper-history-wrap">
+        <div class="chart-title">交易记录</div>
+        <div class="paper-table-wrap">
+          <table class="paper-table" id="paper-history-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>研判</th>
+                <th>置信度</th>
+                <th>沪深300</th>
+                <th>期收益</th>
+                <th>进攻</th>
+                <th>防守+</th>
+                <th>沪深贡献</th>
+                <th>纳指</th>
+                <th>黄金</th>
+                <th>国债</th>
+                <th>货币</th>
+                <th>逆回购</th>
+                <th>成本</th>
+                <th>基准</th>
+                <th>总资产</th>
+              </tr>
+            </thead>
+            <tbody id="paper-history-body">
+              <tr><td colspan="16" class="empty-hint">暂无模拟交易记录</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ────────── 页面三：归因分析 ────────── -->
+  <div class="page" id="page-attribution">
+    <section class="panel full-width">
+      <div class="panel-head">
+        <h2>策略归因</h2>
+        <div class="prompt-toolbar">
+          <label for="attribution-provider" class="hint">模型</label>
+          <select id="attribution-provider" title="切换归因渠道">
+            <option value="">加载中…</option>
+          </select>
+          <span class="hint">主 KPI 以 2020 后样本外为准；含 LLM 准确率时间分布</span>
+        </div>
+      </div>
+      <div id="attribution-cards" class="attribution-cards"></div>
+      <div class="attribution-grid">
+        <div class="chart-block">
+          <div class="chart-title">滚动夏普（全年窗口）</div>
+          <div id="rolling-sharpe-chart" class="chart"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">年度收益</div>
+          <div id="yearly-chart" class="chart"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">LLM 年度准确率</div>
+          <div id="llm-yearly-acc-chart" class="chart"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-title">LLM 滚动准确率（全年窗口）</div>
+          <div id="llm-rolling-acc-chart" class="chart"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/源码/入口.js"></script>
+</body>
+</html>

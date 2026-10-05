@@ -1,0 +1,12 @@
+# 合并到 ~/.cpolar/cpolar.yml（保留原有 authtoken 与其它隧道）。
+# 在 https://dashboard.cpolar.com 预留二级子域名 your-tunnel-3（预留 → 保留二级子域名，地区 China VIP）。
+# 预留后执行: dig +short your-tunnel-3.vip.cpolar.cn CNAME
+#   应为 cpolard.vip.cpolar.cn（与 your-tunnel-1/your-tunnel-2 一致）
+#   若为 cpolard-b.vip.cpolar.cn → 删除后重新预留，否则公网访问会 404
+# 本地服务：market-agents 前端 8080（/api 代理到 8766）。
+tunnels:
+  market-agents:
+    proto: http
+    addr: "8080"
+    subdomain: your-tunnel-3
+    region: cn_vip

@@ -1,0 +1,63 @@
+# ============ 环境与密钥 ============
+.env
+.env.*
+!.env.example
+后端/配置/配置档/本地.yaml
+
+# ============ 本地数据与缓存（不提交） ============
+# 新路径（后端/数据/）
+后端/数据/raw/*
+!后端/数据/raw/.gitkeep
+后端/数据/processed/*
+!后端/数据/processed/.gitkeep
+后端/数据/cache/*
+!后端/数据/cache/.gitkeep
+# 兼容旧路径（仓库根 data/）
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+
+# ============ 模型权重 ============
+后端/模型/检查点/*
+!后端/模型/检查点/.gitkeep
+models/checkpoints/*
+!models/checkpoints/.gitkeep
+
+# ============ 日志 ============
+后端/日志/*
+!后端/日志/.gitkeep
+logs/*
+!logs/.gitkeep
+*.log
+
+# ============ 前端（Node） ============
+前端/node_modules/
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ============ 备份/临时 ============
+*.bak
+*.tmp
+*~
+
+# ============ IDE / 系统 ============
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ============ Cursor（本地 IDE） ============
+.cursor/

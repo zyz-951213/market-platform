@@ -1,0 +1,11 @@
+[Unit]
+Description=Market Predictor Weekly Auto-Update Timer (Friday 16:45)
+Requires=market-predictor-update.service
+
+[Timer]
+OnCalendar=Fri *-*-* 16:45:00
+Persistent=true
+Unit=market-predictor-update.service
+
+[Install]
+WantedBy=timers.target

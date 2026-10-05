@@ -18,11 +18,26 @@ node_modules/
 dist/
 build/
 *.local
+*.tsbuildinfo
+.pnpm-store/
+
+# --- 工具缓存 / 代理内部 ---
+.ruff_cache/
+.hermes/
 
 # --- 日志/临时 ---
 *.log
 *.jsonl
 /tmp/
+
+# --- 运行态产物（不入库：可从源重建）---
+数据/raw/
+数据/cache/
+数据/processed/
+模型/检查点/*.pt
+模型/检查点/*.pth
+outputs/
+日志/*.log
 
 # --- 系统 ---
 .DS_Store

@@ -1,0 +1,23 @@
+# cpolar 隧道配置示例（复制到 ~/.cpolar/cpolar.yml 并填入 authtoken）
+# 二级子域名 your-tunnel-1 需先在 cpolar 后台「预留 → 保留二级子域名」中申请（地区 China VIP）
+#
+# 安装:
+#   cp deploy/cpolar/cpolar.yml.example ~/.cpolar/cpolar.yml
+#   # 编辑 authtoken（仪表盘复制）
+#   systemctl --user enable --now cpolar.service
+#
+# 公网访问: https://your-tunnel-1.vip.cpolar.cn
+
+authtoken: YOUR_CPOLAR_AUTHTOKEN
+
+tunnels:
+  ssh:
+    proto: tcp
+    addr: "22"
+    region: cn_vip
+
+  market-predictor:
+    proto: http
+    addr: "19080"
+    subdomain: your-tunnel-1
+    region: cn_vip

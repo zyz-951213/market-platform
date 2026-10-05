@@ -1,0 +1,10 @@
+[Unit]
+Description=Market Predictor Paper Trading (one-shot)
+After=network-online.target market-predictor-api.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-@REPO_ROOT@/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@MARKET_PREDICTOR@ paper --once
