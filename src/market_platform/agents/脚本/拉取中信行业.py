@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""从东财 F10 拉取中信一/二/三级行业，写入 sector_hierarchy.csv。"""
+"""从东财 F10 拉取中信一/二/三级行业，写入 sector_hierarchy.csv。
+
+用法: python -m market_platform.agents.脚本.拉取中信行业 [--refresh]
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
+
+from market_platform.agents.采集.行业.中信拉取 import build_citic_hierarchy_df
 from market_platform.agents.核心.路径.项目 import data_dir
 
 

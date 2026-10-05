@@ -1,16 +1,28 @@
-"""金融市场数据 全量增量更新(akshare/baostock 增量到最新)"""
-import sys, time, traceback
-sys.path.insert(0, "/home/zhuyizhou/my_projects/market-platform/src")
+"""金融市场数据 全量增量更新(akshare/baostock 增量到最新)。
 
+用法:
+    python -m market_platform.data.脚本.更新金融市场数据
+    market data 更新金融市场数据.py
+
+注意:本模块**导入不产生任何副作用**,所有更新动作只在 `main()` 中执行
+(历史版本在模块顶层直接跑 22 项任务,任何 import/pytest 收集都会触发生产写入)。
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+import time
+import traceback
+
+from market_platform.core.配置 import 数据库DSN
 from market_platform.data.存储.数据更新器 import DataUpdater
 from market_platform.data.存储 import 数据更新器_akshare as ak_u
 from market_platform.data.存储 import 数据更新器_补充 as sup_u
 from market_platform.data.存储 import 数据更新器_baostock as bs_u
 
 DB_NAME = "金融市场数据"
-DSN = "postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE"
-
-updater = DataUpdater(DB_NAME, DSN)
 
 # (名称, 函数) 顺序: 先日行情(最耗时) 再其它
 TASKS = [
@@ -38,27 +50,68 @@ TASKS = [
     ("公共-预披露日期", ak_u.update_report_dates),
 ]
 
-for name, fn in TASKS:
-    t0 = time.time()
+
+def 运行更新(*, 只跑: tuple[str, ...] = (), 跳过水位: bool = False) -> tuple[int, int]:
+    """顺序执行更新任务,返回 (成功数, 失败数)。"""
+    updater = DataUpdater(DB_NAME, 数据库DSN())
+    成功 = 失败 = 0
+
+    for name, fn in TASKS:
+        if 只跑 and not any(k in name for k in 只跑):
+            print(f"[SKIP] {name}", flush=True)
+            continue
+        t0 = time.time()
+        try:
+            msg = fn(updater)
+            成功 += 1
+            print(f"[OK]   {name}: {msg} ({time.time() - t0:.0f}s)", flush=True)
+        except Exception as e:  # noqa: BLE001 — 单项失败不阻断后续任务
+            失败 += 1
+            print(
+                f"[FAIL] {name}: {type(e).__name__} {str(e)[:120]} ({time.time() - t0:.0f}s)",
+                flush=True,
+            )
+            traceback.print_exc(limit=2)
+
+    print("全部更新任务结束", flush=True)
+
+    if not 跳过水位:
+        重扫水位()
+    return 成功, 失败
+
+
+def 重扫水位() -> int:
+    """调用水位重扫脚本(独立进程,避免模块耦合)。"""
     try:
-        msg = fn(updater)
-        print(f"[OK]   {name}: {msg} ({time.time()-t0:.0f}s)", flush=True)
-    except Exception as e:
-        print(f"[FAIL] {name}: {type(e).__name__} {str(e)[:120]} ({time.time()-t0:.0f}s)", flush=True)
-        traceback.print_exc(limit=2)
+        r = subprocess.run(
+            [sys.executable, "-m", "market_platform.data.脚本.刷新全库水位"],
+            check=False,
+        )
+        if r.returncode == 0:
+            print("[OK]   行情增量全库水位已刷新", flush=True)
+        else:
+            print(f"[FAIL] 全库水位 exit={r.returncode}", flush=True)
+        return r.returncode
+    except Exception as e:  # noqa: BLE001
+        print(f"[FAIL] 全库水位: {type(e).__name__} {e}", flush=True)
+        return 1
 
-print("全部更新任务结束", flush=True)
 
-# 全库水位重扫（可衡量追踪）
-try:
-    import subprocess
-    r = subprocess.run(
-        [sys.executable, "/home/zhuyizhou/my_projects/market-platform/src/market_platform/data/脚本/刷新全库水位.py"],
-        check=False,
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="金融市场数据 增量更新")
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        help="只跑名称包含该子串的任务(可重复),例如 --only 日行情",
     )
-    if r.returncode == 0:
-        print("[OK]   行情增量全库水位已刷新", flush=True)
-    else:
-        print(f"[FAIL] 全库水位 exit={r.returncode}", flush=True)
-except Exception as e:
-    print(f"[FAIL] 全库水位: {type(e).__name__} {e}", flush=True)
+    parser.add_argument("--no-watermark", action="store_true", help="结束后不重扫水位")
+    args = parser.parse_args(argv)
+
+    成功, 失败 = 运行更新(只跑=tuple(args.only), 跳过水位=args.no_watermark)
+    print(f"更新汇总: 成功 {成功} / 失败 {失败}", flush=True)
+    return 0 if 失败 == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

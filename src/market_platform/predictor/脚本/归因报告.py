@@ -1,11 +1,12 @@
 """
 策略归因分析 — 分段收益、涨跌市参与率、年度夏普
 
-用法: python 后端/脚本/归因报告.py
+用法: python -m market_platform.predictor.脚本.归因报告
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 
 import numpy as np
 import pandas as pd

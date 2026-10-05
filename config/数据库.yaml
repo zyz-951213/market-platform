@@ -1,0 +1,29 @@
+# 统一库配置 —— 全仓唯一真相源
+#
+# 原先三份配置(packages/data/配置/数据库.yaml、agents 与 predictor 各一份)口径不一,
+# 现收敛为本文件。库名/连接/各域 search_path 只在这里定义。
+#
+# 环境变量覆盖:DATABASE_URL(连接)、DATABASE_ENABLED=1(强制启用)。
+
+库名: 金融市场数据
+连接: postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE   # 本地 peer 连接,库名 percent-encoded
+启用: true
+
+# 各域写入位置与 search_path(三层:公共 / 行情增量 / 项目层)
+写入:
+  数据底座:
+    搜索路径: "公共, 行情增量"          # 直写公共层物理表
+  行为分析:
+    搜索路径: "行为分析, 公共, 行情增量"
+  指数预测:
+    搜索路径: "指数预测, 公共, 行情增量"
+
+读表:
+  批量大小: 2000
+  连接超时: 10
+  从库读: true
+  双写文件: false      # 是否同时写 parquet/json 副本(默认关:库为唯一真源)
+  写parquet: false
+  parquet回退: false
+  写文件: false
+  文件回退: false
