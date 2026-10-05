@@ -1,0 +1,83 @@
+# 全市场增量分析 — 使用已下载的 PostgreSQL 数据，不重复拉取
+
+data:
+  root: data
+  symbol: "000001"
+  market: "sz"
+  start_date: "20050104"
+  end_date: null
+  use_rolling_window: false
+  rolling_window_days: 1095
+  fetch_sleep_seconds: 0.5
+  fallback_daily_proxy: true
+  daily_sources:
+    primary: tencent
+    fallback: [eastmoney, sina]
+  minute_sources:
+    primary: daily_proxy
+    fallback: [baostock, sina, eastmoney]
+  fund_flow_sources:
+    primary: eastmoney_direct
+    fallback: [sina, eastmoney, volume_proxy]
+
+nmf:
+  n_components: 5
+  max_iter: 500
+  random_state: 42
+
+features:
+  minute:
+    volume_spike_window: 20
+    realized_vol_window: 5
+
+state:
+  method: hmm
+  n_states: 5
+  residual_z_threshold: 2.0
+  cluster_map_method: forward_return
+  forward_horizon_days: 1
+  state_confirm_days: 2
+  confirm_asymmetric: true
+  confirm_enter_defensive_days: 1
+  confirm_exit_defensive_days: 2
+  confirm_enter_offensive_days: 1
+  walk_forward_cluster_map: true
+
+backtest:
+  initial_capital: 1000000
+  commission: 0.0003
+  stamp_tax: 0.0005
+  slippage: 0.0005
+  limit_pct: 0.098
+  apply_limit: true
+  apply_stamp_tax: true
+  apply_slippage: true
+  optimize_step: 0.1
+  drawdown_penalty: 0.5
+  optimize_objective: trend
+  min_position_floor: 0.4
+  mid_position_floor: 0.6
+  strong_position_floor: 0.9
+  walk_forward_ratio: 0.7
+
+risk:
+  enabled: true
+  max_single_position: 1.0
+  panic_max_position: 0.10
+  max_portfolio_position: 1.0
+  max_single_weight: 0.12
+  max_sector_weight: 0.35
+  drawdown_reduce_threshold: 0.08
+  drawdown_clear_threshold: 0.15
+  drawdown_reduce_scale: 0.8
+  drawdown_clear_scale: 0.30
+  drawdown_recover_threshold: 0.06
+
+llm:
+  provider: rules
+
+output:
+  root: outputs
+  group_by_sector: true
+  group_by_l2: true
+  name_as_folder: true

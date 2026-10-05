@@ -1,0 +1,115 @@
+# 默认配置 — 可通过 CLI 或环境变量覆盖
+
+data:
+  root: data
+  symbol: "000001"          # 平安银行，示例标的
+  market: "sz"              # sh / sz
+  start_date: "20240101"
+  end_date: null            # null = 今天
+
+nmf:
+  n_components: 5
+  max_iter: 500
+  random_state: 42
+
+features:
+  minute:
+    volume_spike_window: 20
+    realized_vol_window: 5
+
+simulation:
+  lookback: 5
+  impact_lambda: 0.15
+  retail_momentum_sensitivity: 1.0
+  retail_base_order_size: 50000
+  retail_chase_threshold: 0.002
+  institutional_reversion_sensitivity: 1.0
+  institutional_base_order_size: 200000
+  institutional_vwap_threshold: 0.003
+  quant_signal_sensitivity: 1.0
+  quant_base_order_size: 150000
+  quant_rsi_oversold: 30
+  quant_rsi_overbought: 70
+  quant_vol_spike_threshold: 2.0
+  macro_signal_sensitivity: 1.0
+  macro_base_order_size: 500000
+  hot_money_signal_sensitivity: 1.0
+  hot_money_base_order_size: 300000
+  hot_money_momentum_threshold: 0.003
+  prefer_calibrated: true
+
+state:
+  method: hmm
+  n_states: 5
+  residual_z_threshold: 2.0
+  cluster_map_method: forward_return
+  forward_horizon_days: 1
+  state_confirm_days: 2
+  confirm_asymmetric: true
+  confirm_enter_defensive_days: 1
+  confirm_exit_defensive_days: 2
+  confirm_enter_offensive_days: 1
+  walk_forward_cluster_map: true
+
+llm:
+  provider: rules
+  model: qwen2.5:7b
+  base_url: http://127.0.0.1:11434
+
+backtest:
+  initial_capital: 1000000
+  commission: 0.0003
+  stamp_tax: 0.0005
+  slippage: 0.0005
+  limit_pct: 0.098
+  apply_limit: true
+  apply_stamp_tax: true
+  apply_slippage: true
+  optimize_step: 0.1
+  drawdown_penalty: 0.5
+  optimize_objective: trend
+  min_position_floor: 0.4
+  mid_position_floor: 0.6
+  strong_position_floor: 0.9
+  walk_forward_ratio: 0.7
+
+risk:
+  enabled: true
+  max_single_position: 1.0
+  panic_max_position: 0.10
+  max_portfolio_position: 1.0
+  max_single_weight: 0.12
+  max_sector_weight: 0.35
+  drawdown_reduce_threshold: 0.08
+  drawdown_clear_threshold: 0.15
+  drawdown_reduce_scale: 0.8
+  drawdown_clear_scale: 0.30
+  drawdown_recover_threshold: 0.06
+
+notify:
+  enabled: false
+  webhook_url: ""
+  msgtype: text
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    username: ""
+    password: ""
+    from_addr: ""
+    to_addrs: []
+    use_tls: true
+
+paper_trading:
+  enabled: true
+  top_n: 20
+  min_suggested_position: 0.25
+  exclude_states: ["恐慌"]
+  apply_risk_constraints: true
+  respect_limit_up_down: true
+  notify_after_cycle: true
+  initial_capital: 1000000
+  rebalance_buffer: 5
+
+output:
+  root: outputs

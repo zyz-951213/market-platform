@@ -1,0 +1,45 @@
+# 自动数据更新 — 检测过期行情、增量拉取并触发分析
+
+data:
+  root: data
+  symbol: "000001"
+  market: "sz"
+  start_date: "20050104"
+  end_date: null
+  use_rolling_window: false
+  rolling_window_days: 1095
+  fetch_sleep_seconds: 0.5
+  fallback_daily_proxy: true
+  group_by_sector: true
+  group_by_l2: true
+  name_as_folder: true
+  daily_sources:
+    primary: eastmoney
+    fallback: [tencent, sina]
+  minute_sources:
+    primary: daily_proxy
+    fallback: [baostock, sina, eastmoney]
+  fund_flow_sources:
+    primary: eastmoney_direct
+    fallback: [sina, eastmoney, volume_proxy]
+
+features:
+  minute:
+    volume_spike_window: 20
+    realized_vol_window: 5
+
+output:
+  root: outputs
+
+auto_update:
+  enabled: true
+  startup_delay_seconds: 10
+  # 不设上限：一轮尽量拉完/分析完全部过期标的（约全市场规模）
+  fetch_limit: 10000
+  analyze_limit: 10000
+  refresh_universe_list: false
+  refresh_market_data: true
+  # 全量一轮可能较长，完成后间隔拉长，避免重复空转
+  loop_interval_seconds: 3600
+  paper_trading_after_update: true
+  paper_trading_on_startup: true

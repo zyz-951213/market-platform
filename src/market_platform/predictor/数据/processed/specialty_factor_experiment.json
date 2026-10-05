@@ -1,0 +1,172 @@
+{
+  "holdout": "2021-01-01",
+  "rule_breakdown": {
+    "rules": {
+      "specialty_soft": {
+        "n": 639,
+        "share_pct": 23.4,
+        "acc": 0.3975
+      },
+      "specialty_vote": {
+        "n": 1210,
+        "share_pct": 44.3,
+        "acc": 0.2835
+      },
+      "specialty_agree": {
+        "n": 880,
+        "share_pct": 32.2,
+        "acc": 0.3966
+      }
+    },
+    "members": [
+      "deepseek",
+      "qwen",
+      "doubao",
+      "kimi",
+      "minimax"
+    ],
+    "n_days": 2729,
+    "avg_weights": {
+      "deepseek": 0.216,
+      "qwen": 0.2373,
+      "doubao": 0.1943,
+      "kimi": 0.1772,
+      "minimax": 0.1752
+    },
+    "cls_acc": 0.3466
+  },
+  "overlap_qwen": {
+    "same_as_qwen_pct": 82.2,
+    "n": 2729
+  },
+  "results": [
+    {
+      "label": "specialty_factor",
+      "n": 1349,
+      "acc": 0.3499,
+      "dir_acc": 0.5562,
+      "flat_pct": 46.3,
+      "up_pct": 32.8,
+      "dn_pct": 20.9,
+      "conf_mean": 0.822,
+      "avg_offense": 0.457,
+      "total_return": 0.4914,
+      "ann": 0.0775,
+      "sharpe": 0.947,
+      "mdd": -0.1133,
+      "trades": 233
+    },
+    {
+      "label": "role_ensemble",
+      "n": 1349,
+      "acc": 0.361,
+      "dir_acc": 0.5478,
+      "flat_pct": 38.0,
+      "up_pct": 31.0,
+      "dn_pct": 31.1,
+      "conf_mean": 0.746,
+      "avg_offense": 0.418,
+      "total_return": 0.5966,
+      "ann": 0.0913,
+      "sharpe": 1.1525,
+      "mdd": -0.1147,
+      "trades": 255
+    },
+    {
+      "label": "deepseek",
+      "n": 1349,
+      "acc": 0.3536,
+      "dir_acc": 0.545,
+      "flat_pct": 43.1,
+      "up_pct": 28.9,
+      "dn_pct": 28.0,
+      "conf_mean": 0.73,
+      "avg_offense": 0.423,
+      "total_return": 0.5091,
+      "ann": 0.0799,
+      "sharpe": 1.0192,
+      "mdd": -0.1119,
+      "trades": 251
+    },
+    {
+      "label": "qwen",
+      "n": 1349,
+      "acc": 0.3543,
+      "dir_acc": 0.5453,
+      "flat_pct": 39.8,
+      "up_pct": 30.2,
+      "dn_pct": 30.0,
+      "conf_mean": 0.746,
+      "avg_offense": 0.424,
+      "total_return": 0.6018,
+      "ann": 0.092,
+      "sharpe": 1.1734,
+      "mdd": -0.1105,
+      "trades": 248
+    },
+    {
+      "label": "doubao",
+      "n": 1349,
+      "acc": 0.321,
+      "dir_acc": 0.5356,
+      "flat_pct": 56.5,
+      "up_pct": 27.9,
+      "dn_pct": 15.6,
+      "conf_mean": 0.681,
+      "avg_offense": 0.456,
+      "total_return": 0.4468,
+      "ann": 0.0714,
+      "sharpe": 0.8804,
+      "mdd": -0.1146,
+      "trades": 228
+    },
+    {
+      "label": "kimi",
+      "n": 1349,
+      "acc": 0.2958,
+      "dir_acc": 0.4747,
+      "flat_pct": 53.7,
+      "up_pct": 35.5,
+      "dn_pct": 10.7,
+      "conf_mean": 0.631,
+      "avg_offense": 0.459,
+      "total_return": 0.4765,
+      "ann": 0.0755,
+      "sharpe": 0.9245,
+      "mdd": -0.1172,
+      "trades": 224
+    },
+    {
+      "label": "minimax",
+      "n": 1349,
+      "acc": 0.3062,
+      "dir_acc": 0.4953,
+      "flat_pct": 57.3,
+      "up_pct": 30.6,
+      "dn_pct": 12.1,
+      "conf_mean": 0.631,
+      "avg_offense": 0.459,
+      "total_return": 0.4784,
+      "ann": 0.0758,
+      "sharpe": 0.924,
+      "mdd": -0.1164,
+      "trades": 224
+    }
+  ],
+  "best": {
+    "label": "qwen",
+    "n": 1349,
+    "acc": 0.3543,
+    "dir_acc": 0.5453,
+    "flat_pct": 39.8,
+    "up_pct": 30.2,
+    "dn_pct": 30.0,
+    "conf_mean": 0.746,
+    "avg_offense": 0.424,
+    "total_return": 0.6018,
+    "ann": 0.092,
+    "sharpe": 1.1734,
+    "mdd": -0.1105,
+    "trades": 248
+  }
+}

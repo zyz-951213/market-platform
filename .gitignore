@@ -1,0 +1,29 @@
+# --- 密钥/环境 ---
+.env
+.env.*
+!.env.example
+*credential*
+*secret*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Node/前端 ---
+node_modules/
+dist/
+build/
+*.local
+
+# --- 日志/临时 ---
+*.log
+*.jsonl
+/tmp/
+
+# --- 系统 ---
+.DS_Store
+Thumbs.db

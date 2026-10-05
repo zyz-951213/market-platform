@@ -1,0 +1,129 @@
+{
+  "rule_breakdown": {
+    "rules": {
+      "vote_confirm": {
+        "n": 960,
+        "share_pct": 35.2,
+        "acc": 0.4146
+      },
+      "vote_anchor": {
+        "n": 1634,
+        "share_pct": 59.9,
+        "acc": 0.3397
+      },
+      "vote_fallback_anchor": {
+        "n": 101,
+        "share_pct": 3.7,
+        "acc": 0.2673
+      },
+      "vote_override": {
+        "n": 34,
+        "share_pct": 1.2,
+        "acc": 0.4706
+      }
+    },
+    "members": [
+      "qwen",
+      "deepseek",
+      "doubao",
+      "kimi",
+      "minimax"
+    ],
+    "n_days": 2729
+  },
+  "results": [
+    {
+      "label": "role_ensemble",
+      "n": 2729,
+      "acc": 0.365,
+      "dir_acc": 0.5439,
+      "flat_pct": 39.9,
+      "up_pct": 30.7,
+      "dn_pct": 29.4,
+      "conf_mean": 0.737,
+      "avg_offense": 0.436,
+      "total_return": 1.5007,
+      "ann": 0.0883,
+      "sharpe": 1.1076,
+      "mdd": -0.1328,
+      "trades": 488
+    },
+    {
+      "label": "deepseek",
+      "n": 2729,
+      "acc": 0.3477,
+      "flat_pct": 46.7,
+      "total_return": 1.4275,
+      "ann": 0.0853,
+      "sharpe": 1.0432,
+      "mdd": -0.1389,
+      "trades": 481,
+      "source": "saved"
+    },
+    {
+      "label": "qwen",
+      "n": 2729,
+      "acc": 0.3617,
+      "flat_pct": 41.1,
+      "total_return": 1.4838,
+      "ann": 0.0876,
+      "sharpe": 1.1078,
+      "mdd": -0.1327,
+      "trades": 478,
+      "source": "saved"
+    },
+    {
+      "label": "doubao",
+      "n": 2729,
+      "acc": 0.3309,
+      "flat_pct": 59.1,
+      "total_return": 1.3815,
+      "ann": 0.0834,
+      "sharpe": 0.9983,
+      "mdd": -0.1335,
+      "trades": 427,
+      "source": "saved"
+    },
+    {
+      "label": "kimi",
+      "n": 2729,
+      "acc": 0.3144,
+      "flat_pct": 53.5,
+      "total_return": 1.4455,
+      "ann": 0.0861,
+      "sharpe": 1.0165,
+      "mdd": -0.1326,
+      "trades": 414,
+      "source": "saved"
+    },
+    {
+      "label": "minimax",
+      "n": 2729,
+      "acc": 0.3144,
+      "flat_pct": 57.6,
+      "total_return": 1.463,
+      "ann": 0.0868,
+      "sharpe": 1.0218,
+      "mdd": -0.1341,
+      "trades": 414,
+      "source": "saved"
+    }
+  ],
+  "best": {
+    "label": "qwen",
+    "n": 2729,
+    "acc": 0.3617,
+    "dir_acc": NaN,
+    "flat_pct": 41.1,
+    "up_pct": NaN,
+    "dn_pct": NaN,
+    "conf_mean": NaN,
+    "avg_offense": NaN,
+    "total_return": 1.4838,
+    "ann": 0.0876,
+    "sharpe": 1.1078,
+    "mdd": -0.1327,
+    "trades": 478,
+    "source": "saved"
+  }
+}

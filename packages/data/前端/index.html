@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>金融市场数据管理</title>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">金融市场数据管理</div>
+    <div class="navbar-tabs">
+      <div class="navbar-tab active" data-page="page-overview">概览</div>
+      <div class="navbar-tab" data-page="page-tables">表结构</div>
+      <div class="navbar-tab" data-page="page-query">查询</div>
+      <div class="navbar-tab" data-page="page-update">更新</div>
+    </div>
+    <div class="navbar-actions">
+      <span class="hint" id="view-only-badge">只读</span>
+      <span class="badge" id="db-badge">连接中</span>
+      <button id="refresh-btn" class="btn secondary small">刷新</button>
+    </div>
+  </nav>
+
+  <!-- 概览 -->
+  <div class="page active" id="page-overview">
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">连接状态</div>
+        <div class="stat-value" id="stat-status">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Schema 数</div>
+        <div class="stat-value" id="stat-schemas">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">表总数</div>
+        <div class="stat-value" id="stat-tables">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">数据库大小</div>
+        <div class="stat-value" id="stat-size">--</div>
+      </div>
+    </section>
+
+    <div class="main-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Schema 分布</h2>
+          <span class="hint">点击进入表结构</span>
+        </div>
+        <div id="schema-grid" class="db-card-grid"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>容量分布</h2>
+          <span class="hint">按 Schema 总大小</span>
+        </div>
+        <div id="schema-size-chart" class="chart"></div>
+      </section>
+    </div>
+
+    <section class="panel full-width">
+      <div class="panel-head">
+        <h2>水位异常</h2>
+        <span class="hint">来自 行情增量.水位总览（非「正常」）</span>
+      </div>
+      <div class="table-wrap">
+        <table class="channel-summary-table">
+          <thead>
+            <tr>
+              <th>数据源</th>
+              <th>数据集</th>
+              <th>责任方</th>
+              <th>最后日</th>
+              <th>行数</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="watermarks-body">
+            <tr><td colspan="6" class="empty-hint">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel full-width">
+      <div class="panel-head">
+        <h2>大表排行</h2>
+        <span class="hint">点击行打开表结构</span>
+      </div>
+      <div class="table-wrap">
+        <table class="channel-summary-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Schema</th>
+              <th>表名</th>
+              <th>大小</th>
+            </tr>
+          </thead>
+          <tbody id="top-tables-body">
+            <tr><td colspan="4" class="empty-hint">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- 表结构 -->
+  <div class="page" id="page-tables">
+    <div class="browser-layout">
+      <aside class="browser-sidebar panel">
+        <div class="browser-side-head">
+          <h2>表目录</h2>
+          <input id="table-search" type="search" placeholder="搜索表名…" autocomplete="off" />
+        </div>
+        <div id="table-tree" class="table-tree">
+          <p class="empty-hint">加载中…</p>
+        </div>
+      </aside>
+
+      <div class="browser-main">
+        <section class="panel browser-detail">
+          <div class="panel-head">
+            <div class="detail-title-block">
+              <h2 id="detail-title">选择左侧的表</h2>
+              <span class="hint" id="detail-subtitle">查看字段、索引与样例数据</span>
+            </div>
+            <div id="table-info-bar" class="table-info-bar hidden">
+              <div class="info-chip"><span>行数</span><strong id="ti-rows">--</strong></div>
+              <div class="info-chip"><span>大小</span><strong id="ti-size">--</strong></div>
+              <div class="info-chip"><span>字段</span><strong id="ti-cols">--</strong></div>
+              <div class="info-chip"><span>最近分析</span><strong id="ti-analyze">--</strong></div>
+            </div>
+          </div>
+
+          <div class="preview-tabs detail-tabs" id="detail-tabs">
+            <button type="button" class="preview-tab detail-tab active" data-tab="fields">字段</button>
+            <button type="button" class="preview-tab detail-tab" data-tab="indexes">索引 / 外键</button>
+            <button type="button" class="preview-tab detail-tab" data-tab="preview">数据预览</button>
+          </div>
+
+          <div class="detail-pane active" data-pane="fields" id="schema-content">
+            <p class="empty-hint">请从左侧选择一张表</p>
+          </div>
+          <div class="detail-pane" data-pane="indexes" id="index-content">
+            <p class="empty-hint">—</p>
+          </div>
+          <div class="detail-pane" data-pane="preview">
+            <div class="table-wrap" id="preview-content">
+              <p class="empty-hint">—</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- 查询 -->
+  <div class="page" id="page-query">
+    <div class="browser-layout query-layout">
+      <aside class="browser-sidebar panel">
+        <div class="browser-side-head">
+          <h2>选表查询</h2>
+          <input id="query-table-search" type="search" placeholder="搜索表名…" autocomplete="off" />
+        </div>
+        <div id="query-table-tree" class="table-tree">
+          <p class="empty-hint">加载中…</p>
+        </div>
+      </aside>
+
+      <div class="browser-main">
+        <section class="panel browser-detail query-detail">
+          <div class="panel-head">
+            <div class="detail-title-block">
+              <h2 id="query-detail-title">数据查询</h2>
+              <span class="hint" id="query-detail-subtitle">从左侧选择表，或切换到 SQL 控制台</span>
+            </div>
+            <div class="preview-tabs detail-tabs" id="query-mode-tabs" style="border:none;padding:0;margin:0">
+              <button type="button" class="preview-tab query-mode-tab active" data-mode="builder">条件查询</button>
+              <button type="button" class="preview-tab query-mode-tab" data-mode="sql">SQL 控制台</button>
+            </div>
+          </div>
+
+          <div id="query-builder">
+            <div class="query-form">
+              <div class="query-form-row">
+                <div class="query-field grow">
+                  <label for="query-where">WHERE</label>
+                  <input id="query-where" type="text" placeholder="交易日期 >= '2024-01-01' AND 证券代码 = '000001'" spellcheck="false" />
+                </div>
+              </div>
+              <div class="query-form-row">
+                <div class="query-field grow">
+                  <label for="query-order">ORDER BY</label>
+                  <input id="query-order" type="text" placeholder="交易日期 DESC" spellcheck="false" />
+                </div>
+                <div class="query-field narrow">
+                  <label for="query-limit">LIMIT</label>
+                  <input id="query-limit" type="number" value="100" min="1" max="1000" />
+                </div>
+                <div class="query-actions">
+                  <button id="query-btn" class="btn primary">查询</button>
+                  <button id="query-to-sql" class="btn small" type="button" title="把当前条件转为 SQL">转 SQL</button>
+                </div>
+              </div>
+              <div id="query-columns" class="query-columns hidden"></div>
+            </div>
+
+            <div class="result-bar">
+              <div class="query-meta" id="query-meta">尚未查询</div>
+              <div class="pagination" id="query-pagination"></div>
+            </div>
+            <div class="table-wrap result-wrap" id="query-table-wrap">
+              <p class="empty-hint">选择左侧表后点击查询</p>
+            </div>
+          </div>
+
+          <div id="sql-console" class="hidden">
+            <div class="sql-layout">
+              <div class="sql-main">
+                <div class="sql-editor">
+                  <textarea id="sql-editor" rows="10" spellcheck="false" placeholder='SELECT * FROM "公共"."日历文件" LIMIT 20'></textarea>
+                </div>
+                <div class="sql-toolbar">
+                  <button id="sql-run-btn" class="btn primary">执行</button>
+                  <button id="sql-format-btn" class="btn small" type="button">整理空白</button>
+                  <span class="hint">Ctrl / ⌘ + Enter</span>
+                  <span class="hint" id="sql-meta"></span>
+                </div>
+                <div id="sql-history" class="sql-history"></div>
+                <div class="result-bar" style="margin-top:12px">
+                  <div class="query-meta" id="sql-result-meta">执行后显示结果</div>
+                </div>
+                <div class="table-wrap result-wrap" id="sql-result-wrap">
+                  <p class="empty-hint">执行 SQL 后显示结果</p>
+                </div>
+              </div>
+              <aside class="sql-side">
+                <div class="sql-side-title">常用模板</div>
+                <div id="sql-templates" class="sql-templates"></div>
+              </aside>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- 更新控制台 -->
+  <div class="page" id="page-update">
+    <section class="panel full-width">
+      <div class="panel-head">
+        <h2>更新控制台</h2>
+        <span class="hint" id="upd-console-meta">加载中…</span>
+      </div>
+      <div class="upd-toolbar">
+        <select id="upd-filter-owner">
+          <option value="">全部责任方</option>
+          <option value="database" selected>database</option>
+          <option value="行为分析">行为分析</option>
+          <option value="指数预测">指数预测</option>
+          <option value="隐因子">隐因子</option>
+          <option value="微盘股研究">微盘股研究</option>
+          <option value="特别处理研究">特别处理研究</option>
+        </select>
+        <select id="upd-filter-tag">
+          <option value="">全部标签</option>
+        </select>
+        <select id="upd-filter-fresh">
+          <option value="">全部新鲜度</option>
+          <option value="可更新">可更新</option>
+          <option value="已对齐">已对齐</option>
+          <option value="冻结">冻结</option>
+          <option value="不可调度">不可调度</option>
+          <option value="无数据">无数据</option>
+          <option value="未知">未知</option>
+        </select>
+        <label class="upd-check-label"><input type="checkbox" id="upd-filter-sched" /> 仅可调度</label>
+        <label class="upd-check-label"><input type="checkbox" id="upd-only-stale-tag" checked /> 标签更新仅可更新</label>
+        <button id="upd-refresh-console" class="btn secondary small" type="button">刷新列表</button>
+        <button id="upd-refresh-wm" class="btn secondary small" type="button">重扫水位</button>
+        <button id="upd-select-stale" class="btn secondary small" type="button">勾选可更新</button>
+        <button id="upd-run-selected" class="btn primary small" type="button">更新勾选</button>
+        <button id="upd-run-stale" class="btn primary small" type="button">更新全部可更新</button>
+        <button id="upd-run-tag" class="btn primary small" type="button">按标签更新</button>
+      </div>
+      <div class="table-wrap">
+        <table class="channel-summary-table upd-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Schema</th>
+              <th>数据集</th>
+              <th>拉取源</th>
+              <th>标签</th>
+              <th>数据最后日</th>
+              <th>期望最后日</th>
+              <th>落后天</th>
+              <th>新鲜度</th>
+              <th>最近成功</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="upd-console-body">
+            <tr><td colspan="11" class="empty-hint">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="main-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>最近作业</h2>
+        </div>
+        <div class="table-wrap">
+          <table class="channel-summary-table">
+            <thead>
+              <tr>
+                <th>编号</th>
+                <th>触发</th>
+                <th>范围</th>
+                <th>状态</th>
+                <th>成/败</th>
+                <th>开始</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="upd-jobs-body">
+              <tr><td colspan="7" class="empty-hint">暂无</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>作业明细</h2>
+          <span class="hint">含水位是否推进</span>
+        </div>
+        <pre id="upd-job-log" class="update-log">选择作业查看明细，或发起更新后自动跟踪。</pre>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="/源码/入口.js"></script>
+</body>
+</html>

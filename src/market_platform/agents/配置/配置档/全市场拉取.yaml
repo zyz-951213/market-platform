@@ -1,0 +1,32 @@
+# 全市场数据拉取 — 轻量模式（日线+资金流+代理分钟线）
+
+data:
+  root: data
+  symbol: "000001"
+  market: "sz"
+  start_date: "20050104"
+  end_date: null
+  use_rolling_window: false
+  rolling_window_days: 1095
+  fetch_sleep_seconds: 0.5
+  fallback_daily_proxy: true
+  group_by_sector: true
+  group_by_l2: true
+  name_as_folder: true
+  daily_sources:
+    primary: tencent
+    fallback: [eastmoney, sina]
+  minute_sources:
+    primary: daily_proxy
+    fallback: [baostock, sina, eastmoney]
+  fund_flow_sources:
+    primary: eastmoney_direct
+    fallback: [sina, eastmoney, volume_proxy]
+
+features:
+  minute:
+    volume_spike_window: 20
+    realized_vol_window: 5
+
+output:
+  root: outputs

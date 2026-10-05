@@ -1,0 +1,141 @@
+{
+  "holdout": "2021-01-01",
+  "breakdown": {
+    "rules": {
+      "discipline_confirm": {
+        "n": 1078,
+        "share_pct": 39.5,
+        "acc": 0.4082
+      },
+      "discipline_flat": {
+        "n": 1204,
+        "share_pct": 44.1,
+        "acc": 0.2791
+      },
+      "discipline_veto": {
+        "n": 135,
+        "share_pct": 4.9,
+        "acc": 0.2222
+      },
+      "discipline_solo": {
+        "n": 312,
+        "share_pct": 11.4,
+        "acc": 0.4167
+      }
+    },
+    "primary_counts": {
+      "deepseek": 619,
+      "doubao": 171,
+      "qwen": 1648,
+      "minimax": 238,
+      "kimi": 53
+    },
+    "primary_holdout": {
+      "qwen": 906,
+      "deepseek": 170,
+      "minimax": 195,
+      "doubao": 35,
+      "kimi": 43
+    },
+    "same_as_qwen_pct": 82.0,
+    "cls_acc": 0.343
+  },
+  "results": [
+    {
+      "label": "discipline_rule",
+      "n": 1349,
+      "acc": 0.3395,
+      "dir_acc": 0.5689,
+      "flat_pct": 48.8,
+      "up_pct": 29.9,
+      "dn_pct": 21.3,
+      "conf_mean": 0.697,
+      "total_return": 0.5505,
+      "ann": 0.0854,
+      "sharpe": 1.0512,
+      "mdd": -0.1148,
+      "trades": 233
+    },
+    {
+      "label": "qwen",
+      "n": 1349,
+      "acc": 0.3543,
+      "dir_acc": 0.5453,
+      "flat_pct": 39.8,
+      "up_pct": 30.2,
+      "dn_pct": 30.0,
+      "conf_mean": 0.746,
+      "total_return": 0.6018,
+      "ann": 0.092,
+      "sharpe": 1.1734,
+      "mdd": -0.1105,
+      "trades": 248
+    },
+    {
+      "label": "deepseek",
+      "n": 1349,
+      "acc": 0.3536,
+      "dir_acc": 0.545,
+      "flat_pct": 43.1,
+      "up_pct": 28.9,
+      "dn_pct": 28.0,
+      "conf_mean": 0.73,
+      "total_return": 0.5091,
+      "ann": 0.0799,
+      "sharpe": 1.0192,
+      "mdd": -0.1119,
+      "trades": 251
+    },
+    {
+      "label": "specialty_factor",
+      "n": 1349,
+      "acc": 0.3499,
+      "dir_acc": 0.5562,
+      "flat_pct": 46.3,
+      "up_pct": 32.8,
+      "dn_pct": 20.9,
+      "conf_mean": 0.822,
+      "avg_offense": 0.457,
+      "total_return": 0.4914,
+      "ann": 0.0775,
+      "sharpe": 0.947,
+      "mdd": -0.1133,
+      "trades": 233,
+      "source": "prev_holdout_json"
+    },
+    {
+      "label": "role_ensemble",
+      "n": 1349,
+      "acc": 0.361,
+      "dir_acc": 0.5478,
+      "flat_pct": 38.0,
+      "up_pct": 31.0,
+      "dn_pct": 31.1,
+      "conf_mean": 0.746,
+      "avg_offense": 0.418,
+      "total_return": 0.5966,
+      "ann": 0.0913,
+      "sharpe": 1.1525,
+      "mdd": -0.1147,
+      "trades": 255,
+      "source": "prev_holdout_json"
+    }
+  ],
+  "best": {
+    "label": "qwen",
+    "n": 1349,
+    "acc": 0.3543,
+    "dir_acc": 0.5453,
+    "flat_pct": 39.8,
+    "up_pct": 30.2,
+    "dn_pct": 30.0,
+    "conf_mean": 0.746,
+    "total_return": 0.6018,
+    "ann": 0.092,
+    "sharpe": 1.1734,
+    "mdd": -0.1105,
+    "trades": 248,
+    "avg_offense": NaN,
+    "source": NaN
+  }
+}

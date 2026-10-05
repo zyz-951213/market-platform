@@ -1,0 +1,1036 @@
+# ============ 市场预测项目配置 ============
+# 通过 hydra / yaml 读取，也可用 python dict
+
+data:
+  # 标的代码（tushare/akshare 格式）
+  index_code: "000300.SH"        # 沪深300
+  # index_code: "000001.SH"     # 上证综指
+  # index_code: "399001.SZ"     # 深证成指
+
+  # 时间范围（end_date: auto 表示自动更新到今天）
+  # 沪深300 指数于 2005-04 发布，日频数据最早约 2005-01-04
+  start_date: "2014-01-01"
+  end_date: "auto"
+  max_stale_days: 0              # 本地 latest < 目标日 且落后 > N 天则重拉；0=任一落后都拉（勿设 3，否则周五→周一漏更）
+
+  # 数据源
+  source: "akshare"              # akshare / tushare / yfinance
+
+  # K 线频率：daily=日频 | weekly=周频（周五收盘）
+  bar_freq: "daily"
+
+  # 额外因子数据已迁移至 features.financial，此处保留兼容
+  extra_features: {}
+
+features:
+  # 窗口大小（用于分位数等滚动计算）
+  window: 60
+
+  # ---- 财务因子（按财报研究维度组织）----
+  financial:
+    enabled: true
+    percentile_window: 60
+
+    # 指数成分股财报聚合（加权汇总 top N 权重股）
+    index_fundamentals:
+      enabled: true
+      top_constituents: 50       # 按权重取前 N 只，覆盖约 70%+ 市值
+      start_year: "2010"
+      announcement_lag_days: 45  # 季报公告滞后（避免未来函数）
+
+    sources:
+      valuation: true            # 指数 PE/PB/股息率
+      index_fundamentals: true   # 成分股财报加权聚合
+      macro: true                # M2/PPI/PMI/LPR/社融
+      margin: true               # 融资融券余额
+      shibor: true               # Shibor 隔夜
+      north_flow: true           # 北向资金
+
+    dimensions:
+      # 1. 盈利能力 — 利润表核心比率
+      profitability:
+        enabled: true
+        raw_factors:
+          - idx_roe_w
+          - idx_roa_w
+          - idx_gross_margin_w
+          - idx_net_margin_w
+        derived_factors:
+          - idx_roe_w_change
+          - idx_roe_w_ma4q
+          - idx_net_margin_w_change
+
+      # 2. 成长能力 — 营收/利润增速
+      growth:
+        enabled: true
+        raw_factors:
+          - idx_revenue_growth_w
+          - idx_profit_growth_w
+        derived_factors:
+          - idx_revenue_growth_w_ma2q
+          - idx_profit_growth_w_ma2q
+
+      # 3. 估值 — 指数层面定价
+      valuation:
+        enabled: true
+        raw_factors:
+          - pe_ttm
+          - pe_static
+          - pe_median
+          - pb
+          - pb_median
+          - dividend_yield
+        derived_factors:
+          - pe_ttm_ma20
+          - pe_ttm_deviation
+          - pe_ttm_percentile
+          - pb_ma20
+          - pb_deviation
+          - pb_percentile
+          - pe_pb_ratio
+          - pe_vs_median
+          - earnings_yield
+          - peg_proxy
+
+      # 4. 偿债能力 — 资产负债表杠杆
+      leverage:
+        enabled: true
+        raw_factors:
+          - idx_debt_ratio_w
+          - idx_current_ratio_w
+          - idx_quick_ratio_w
+        derived_factors:
+          - idx_debt_ratio_w_change
+          - idx_current_ratio_w_deviation
+
+      # 5. 现金流 — 利润质量
+      cashflow:
+        enabled: true
+        raw_factors:
+          - idx_ocf_per_share_w
+          - idx_ocf_to_profit_w
+          - idx_asset_turnover_w
+        derived_factors:
+          - idx_ocf_to_profit_w_deviation
+          - idx_ocf_per_share_w_change
+
+      # 6. 宏观流动性 — 货币政策与信用环境
+      liquidity_macro:
+        enabled: true
+        raw_factors:
+          - m2_yoy
+          - m1_yoy
+          - ppi_yoy
+          - pmi_mfg
+          - lpr_1y
+          - social_financing
+          - shibor_on
+        derived_factors:
+          - m2_yoy_change
+          - pmi_mfg_ma3
+          - ppi_yoy_change
+          - lpr_spread
+          - social_financing_ma3
+          - shibor_ma10
+          - shibor_change
+          - shibor_high
+
+      # 7. 资金面 — 市场交易情绪
+      market_flow:
+        enabled: true
+        raw_factors:
+          - margin_balance
+          - north_flow_net
+        derived_factors:
+          - margin_balance_change
+          - margin_balance_ma20
+          - north_flow_ma_5
+          - north_flow_ma_20
+          - north_flow_change
+          - north_flow_cumsum_20
+
+  # ---- 外部数据源（外盘 / 宏观新闻）----
+  external:
+    enabled: true
+    sources:
+      overseas: true
+      macro_news: true
+    overseas:
+      hk_symbol: "HSI"
+      cache_file: "external_overseas.parquet"
+    macro_news:
+      history: true                 # 按行情全区间增量拉取
+      history_start: "2023-01-01"   # 百度宏观日历约从 2023 年起有数据
+      lookback_days: 30              # history=false 时仅拉最近 N 天
+      max_headlines_per_day: 3
+      max_headlines_per_week: 5
+      request_delay_sec: 0.35
+      max_retries: 3
+      retry_sleep_sec: 2.0
+      save_every_days: 40
+      ffill_limit: 5
+      cache_file: "external_macro_news.parquet"
+
+  # ---- 市场信号（行业轮动 / ETF / PCR / 贴水）----
+  market_signals:
+    enabled: true
+    sources:
+      industry_rotation: true
+      etf_flow: true
+      option_pcr: true
+      futures_basis: true
+    industry_rotation:
+      window: 20
+      cache_file: "market_industry_panel.parquet"
+      request_delay_sec: 0.2
+    etf_flow:
+      symbol: "sh510300"
+      cache_file: "market_etf_510300.parquet"
+    option_pcr:
+      underlying_code: "510300"
+      history_start: "2020-01-01"
+      cache_file: "market_hs300_pcr.parquet"
+      request_delay_sec: 0.35
+      max_retries: 2
+    futures_basis:
+      symbol: "IF0"
+      cache_file: "market_if_basis.parquet"
+
+  # ---- 宏观新闻情感（数值特征供特征工程）----
+  news_sentiment:
+    enabled: true
+    use_embeddings: false          # true 时需 pip install sentence-transformers
+    embedding_model: "shibing624/text2vec-base-chinese"
+    smooth_window: 3
+    ffill_limit: 5
+
+  # 技术指标列表（文档用途，计算逻辑见 data/features.py）
+  tech_indicators:
+    - sma_5
+    - sma_10
+    - sma_20
+    - sma_60
+    - ema_12
+    - ema_26
+    - rsi_14
+    - macd
+    - macd_signal
+    - macd_hist
+    - boll_upper
+    - boll_middle
+    - boll_lower
+    - atr_14
+    - volume_sma_5
+    - volume_ratio
+
+  # 自定义衍生因子
+  custom_factors:
+    - price_momentum_1d
+    - price_momentum_5d
+    - price_momentum_20d
+    - volatility_20d
+    - volume_change_1d
+    - turnover_rate_change
+
+  # 标签构造
+  label:
+    method: "future_return"      # future_return / future_direction
+    horizon: 1                   # 预测未来 1 个交易日
+    direction_threshold: 0.003   # 日频平盘带 ±0.3%（贴近指数窄幅波动）
+    soft_label:
+      enabled: true              # true 时用软标签替代硬分类（Transformer 需重启训练）
+      sigma: 0.002               # 调优结果：0.002 最优（准确率 42.13%）
+    week_label_enabled: true
+    week_horizon: 5               # 周频辅助标签：未来 5 个交易日（主路径为日频三分类）
+    week_direction_threshold: 0.0075  # 周累计三分类平盘带 ±0.75%
+
+model:
+  split:
+    val_ratio: 0.2               # 验证集目标占比
+    split_method: "cycle"         # temporal=时间末尾 | cycle=按牛熊震荡周期
+    cycle:
+      trend_window: 120           # 长期趋势均线窗口
+      momentum_window: 60         # 动量计算窗口
+      bull_threshold: 0.03        # 牛市判定：价格高于均线 3%
+      bear_threshold: -0.03       # 熊市判定：价格低于均线 3%
+      min_segment_days: 20        # 最短周期片段（天）
+
+  # ---- Transformer ----
+  transformer:
+    enabled: true                # 量价通道：需存在检查点 transformer_model.pt
+    export_features: true
+    mode: "single"               # 单尺度最优
+
+    seq_len: 20
+    feature_cols:
+      - momentum_1d
+      - momentum_5d
+      - momentum_10d
+      - momentum_20d
+      - rsi_14
+      - macd_hist
+      - volatility_20d
+      - volume_ratio
+      - close_position
+
+    regime_enabled: false
+
+    # 三维通道依然存在，但共享同一编码器：
+    #   输入 (batch, 20, n_features) → Transformer → (batch, d_model)
+    #   输出经 +regime 嵌入 → 分类器
+    d_model: 128
+    n_heads: 4
+    n_layers: 3
+    dropout: 0.1
+    learning_rate: 0.001
+    batch_size: 64
+    epochs: 30
+
+  # ---- LLM 作因子：传统模型吃因子+LLM信号（实验，默认不改 active_api）----
+  llm_factor:
+    model: hgb                   # hgb | logreg
+    feature_mode: both           # factors | llm | both
+    min_train_days: 504
+    refit_every: 63
+    conf_threshold: 0.0          # >0 时低置信观望
+    conf_floor: 0.42
+    conf_ceil: 0.88
+
+  # ---- LLM：多 API 支持 ----
+  llm:
+    enabled: true
+    provider: "api"
+    active_api: "deepseek"   # 日频主渠道：与 is_latest 回测对齐
+    json_output: true
+    backtest_retrain: false
+
+    # 集合元模型：默认 stacking（raw+反转特征），rule 作消融
+    ensemble:
+      mode: stack                 # stack | rule
+      min_bucket_n: 40
+      trust_acc: 0.42             # rule 模式：一致且均准时增强
+      invert_acc: 0.0             # rule 模式反转阈值；stack 靠特征学习
+      agreement_min: 0.62
+      conf_floor: 0.42
+      conf_ceil: 0.88
+      conf_threshold: 0.48        # 曲线上 selective≈39%、覆盖≈39% 的折中
+      min_train_days: 504
+      refit_every: 63
+      include_invert_features: false  # 实测反转特征未抬准确率，默认关闭
+
+    # 角色化调仓 v2：qwen 为锚，deepseek 确认/对冲，谨慎派否决追涨
+    role_ensemble:
+      anchor: qwen
+      hedge: deepseek
+      directional: [deepseek, qwen]
+      cautious: [doubao, kimi, minimax]
+      twin: [kimi, minimax]
+      bear_conf: 0.70
+      bull_conf: 0.62
+      confirm_bull_boost: 0.04
+      confirm_bear_boost: 0.05
+      anchor_weight_floor: 0.55
+      override_acc_edge: 0.025
+      override_min_conf: 0.78
+      acc_roll: 252
+
+    # 擅长因子综合：无固定冠军；因果滚动状态/方向条件准确率加权
+    specialty_factor:
+      members: [deepseek, qwen, doubao, kimi, minimax]
+      twin: [kimi, minimax]
+      roll: 252
+      min_bucket_n: 30
+      min_global_n: 60
+      acc_power: 2.0
+      state_blend: 0.65
+      dir_bonus: 0.15
+      agree_conf_boost: 0.04
+      disagree_conf_scale: 0.85
+      dispersion_flat: 0.45
+
+    # 纪律策略：因果选风格健康主信号 + 辅信号确认/否决（不软投票）
+    discipline_rule:
+      members: [deepseek, qwen, doubao, kimi, minimax]
+      roll: 252
+      min_n: 60
+      max_flat: 0.52
+      min_balance: 0.55
+      aux_conf: 0.68
+      confirm_boost: 0.05
+      solo_haircut: 0.04
+      veto_to_flat: true
+      veto_conf: 0.50
+      primary_conf_floor: 0.55
+
+    api:
+      base_url: "https://api.deepseek.com"
+      model: "deepseek-v4-pro"
+      api_key_env: "DEEPSEEK_API_KEY"
+      temperature: 0.1
+      max_tokens: 320
+      max_retries: 2
+      retry_sleep: 1.0
+      cache_enabled: true
+
+    # 验证集：优先国内最新旗舰（DeepSeek / 通义 / 豆包 / Kimi / GLM / MiniMax）
+    # 兔子海外渠道默认关闭（enabled: false）；需要时再打开
+    # Key：DEEPSEEK / DASHSCOPE / ARK / MOONSHOT / ZHIPU / MINIMAX（可选 TUZI）
+    providers:
+      llm_factor_hgb:
+        kind: llm_factor
+        model: "llm-factor-hgb"
+      ensemble:
+        kind: ensemble
+        model: "llm-ensemble-stack"
+      role_ensemble:
+        kind: role
+        model: "llm-role-ensemble"
+      specialty_factor:
+        kind: specialty
+        model: "llm-specialty-factor"
+      discipline_rule:
+        kind: discipline
+        model: "llm-discipline-rule"
+      deepseek:
+        base_url: "https://api.deepseek.com"
+        model: "deepseek-v4-pro"
+        api_key_env: "DEEPSEEK_API_KEY"
+        temperature: 0.1
+        max_tokens: 512
+        max_retries: 2
+        retry_sleep: 1.0
+        cache_enabled: true
+        thinking: false
+      # 通义千问（阿里云百炼）；.env 填 DASHSCOPE_API_KEY
+      qwen:
+        base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        model: "qwen3.7-max"       # 已探测可用；旧 qwen3-max 仍可回退
+        api_key_env: "DASHSCOPE_API_KEY"
+        temperature: 0.1
+        max_tokens: 1024
+        max_retries: 2
+        retry_sleep: 1.0
+        cache_enabled: true
+        thinking: false
+      # 豆包（火山方舟）；.env 填 ARK_API_KEY；也可改成控制台 ep-xxxxxxxx
+      doubao:
+        base_url: "https://ark.cn-beijing.volces.com/api/v3"
+        model: "doubao-seed-2-0-lite-260428"  # 2.0-lite 试跑；pro 可改回 doubao-seed-2-0-pro-260215
+        api_key_env: "ARK_API_KEY"
+        temperature: 0.1
+        max_tokens: 1024
+        max_retries: 2
+        retry_sleep: 1.0
+        cache_enabled: true
+        thinking: false
+      # Kimi / Moonshot；.env 填 MOONSHOT_API_KEY
+      kimi:
+        base_url: "https://api.moonshot.cn/v1"
+        model: "kimi-k2.6"           # 余额约¥40不够 k3；k2.6 关 thinking 可试全量
+        api_key_env: "MOONSHOT_API_KEY"
+        temperature: 0.6             # k2.6 关 thinking 时仅允许 0.6
+        max_tokens: 512
+        max_retries: 5
+        retry_sleep: 5.0
+        timeout: 120
+        cache_enabled: true
+        thinking: false              # 省输出 token；开 thinking 会烧余额
+        json_object: true
+      # GLM-4.7 走阿里百炼兼容接口（避开智谱 1302 限流）；.env 填 DASHSCOPE_API_KEY
+      glm:
+        base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        model: "glm-4.7"
+        api_key_env: "DASHSCOPE_API_KEY"
+        temperature: 0.1
+        max_tokens: 512
+        max_retries: 4
+        retry_sleep: 3.0
+        timeout: 60
+        min_interval_sec: 1.0
+        cache_enabled: true
+        thinking: false
+        json_object: true
+      minimax:
+        base_url: "https://api.minimaxi.com/v1"
+        model: "MiniMax-M3"
+        api_key_env: "MINIMAX_API_KEY"
+        temperature: 0.1
+        max_tokens: 1024
+        max_retries: 2
+        retry_sleep: 1.0
+        cache_enabled: true
+        thinking: false
+        json_object: true
+      # —— 海外（兔子代理）：默认关闭，不参与列表/集合/预热 ——
+      tuzi_sonnet:
+        enabled: false
+        base_url: "https://api.tu-zi.com/v1"
+        model: "claude-sonnet-4-6"
+        api_key_env: "TUZI_API_KEY"
+        temperature: 0.1
+        max_tokens: 512
+        max_retries: 4
+        retry_sleep: 3.0
+        timeout: 45
+        cache_enabled: true
+      tuzi_gpt:
+        enabled: false
+        base_url: "https://api.tu-zi.com/v1"
+        model: "gpt-5.5"
+        api_key_env: "TUZI_API_KEY"
+        temperature: 0.1
+        max_tokens: 512
+        max_retries: 4
+        retry_sleep: 3.0
+        timeout: 45
+        cache_enabled: true
+      tuzi_gemini:
+        enabled: false
+        base_url: "https://api.tu-zi.com/v1"
+        model: "gemini-3.1-pro-preview"
+        api_key_env: "TUZI_API_KEY"
+        temperature: 0.1
+        max_tokens: 2048
+        max_retries: 4
+        retry_sleep: 3.0
+        timeout: 60
+        cache_enabled: true
+        json_object: true
+      tuzi_grok:
+        enabled: false
+        base_url: "https://api.tu-zi.com/v1"
+        model: "grok-4.1"
+        api_key_env: "TUZI_API_KEY"
+        temperature: 0.1
+        max_tokens: 2048
+        max_retries: 4
+        retry_sleep: 3.0
+        timeout: 60
+        cache_enabled: true
+        json_object: true
+
+    prompt:
+      version: "weekly_v4_regime"     # 周频 + 三态规则路由 Prompt
+      blind_mode: true
+      blind_live: false
+      mode: "comprehensive"
+      lookback_weeks: 12
+      lookback_days: 30
+      dual_frequency:
+        enabled: false
+      regime_router:
+        enabled: true
+        smooth_window: 5
+        bull_deviation: 3.0           # deviation_60 为百分比单位
+        bear_deviation: -3.0
+        include_money_flow_change: true
+        include_etf: true
+        include_basis: true
+      system: >
+        你是专业的A股量化分析师，擅长从盈利能力、成长能力、估值、偿债能力、
+        现金流、宏观流动性和资金面七个维度综合判断指数中期走势。
+      api_system: >
+        你是专业的A股指数量化分析师，任务是根据估值与资金面、外盘、清洗后新闻，
+        以及市场状态提示，判断沪深300下一交易日属于「涨」「跌」「平」中哪一类。
+        量价技术指标由独立的 Transformer 通道处理，本消息不含收盘序列或技术因子；
+        请勿编造未给出的量价信息。
+        只能使用用户提供的数据，不得编造未给出的信息；数据缺失时须在理由中说明。
+        分类口径：
+        「涨」：预计下一交易日涨幅 > +0.30%；
+        「跌」：预计下一交易日跌幅 < -0.30%；
+        「平」：预计涨跌幅落在 [-0.30%, +0.30%]。
+        即使不确定也必须在涨/跌/平中选一侧并给出置信度与理由。
+      api_system_weekly: >
+        你是专业的A股指数量化分析师，任务是根据【本周已实现的日频信号复合】
+        （估值与资金面周聚合、清洗后新闻，以及市场状态提示）
+        判断沪深300随后一周（约5个交易日累计）属于「涨」「跌」「平」中哪一类，并给出幅度点估计。
+        量价技术路径由独立 Transformer 通道处理，本消息不含量价/技术周聚合；请勿编造。
+        只能使用用户提供的数据，不得编造未给出的信息；数据缺失时须在理由中说明。
+        分类口径：
+        「涨」：预计随后5个交易日累计收益 > +0.75%；
+        「跌」：预计随后5个交易日累计收益 < -0.75%；
+        「平」：累计收益落在 [-0.75%, +0.75%]。
+        同时给出 week_return_pct（百分比，可正可负，须与方向符号一致）。
+        即使不确定也必须在涨/跌/平中选一侧并给出幅度与置信度。
+        震荡市状态下若信号冲突，应降低 week_confidence。
+      include_technical: false         # LLM 不处理技术指标（由 Transformer 负责）
+      include_external: true
+      technical_factors:
+        - rsi_14
+        - momentum_5d
+        - momentum_20d
+        - macd_hist
+        - volatility_20d
+      task_instruction: >
+        请综合外盘、宏观新闻、七维估值/资金因子与市场状态提示，
+        判断下一交易日涨跌幅属于「涨」「跌」「平」中的哪一类。
+        勿依赖量价技术序列（由 Transformer 通道负责）。
+        方向必须与三分类口径的边界一致，并给出置信度与研判理由。
+      answer_prefix: "预测方向："
+
+    # 「平」校准：API 优先，特征门控（见 models/prediction_calibrator.py）
+    calibration:
+      enabled: true
+      promote_to_flat: true        # 震荡特征门控：低/中置信涨跌可提升为平
+      # 仅对回测中「开转平后收益提升」的渠道启用；变差渠道不转平
+      promote_to_flat_providers:
+        - deepseek
+        - qwen
+        - glm
+        - doubao
+        - kimi
+        - minimax
+      signal_fusion: true
+      use_transformer_signal: true   # 技术通道优先用 Transformer 量价概率
+      tf_min_edge: 0.015             # 最大类与次大类概率差门槛（模型置信偏软时宜偏低）
+      tf_disagree_to_flat: true      # LLM 与 TF 方向冲突且 TF 较明确 → 转平
+      tf_disagree_conf_max: 0.70
+      tf_disagree_strength_min: 0.50
+      agreement_conf_boost: 0.08
+      prior_adjustment: false
+      flat_policy:
+        preserve_api_conf: 0.74
+        promote_flat_min: 0.30
+        promote_flat_conf_max: 0.64
+        retain_api_flat_min: 0.12
+        demote_api_flat_max: 0.10
+        strong_chop_min: 0.52
+        reversal_flat_min: 0.62
+        exhaustion_flat_min: 0.58
+        flat_weight: 0.55
+        small_move_weight: 0.45
+      features:
+        momentum_5d_max: 0.004
+        momentum_exhaust_mom: 0.015
+        momentum_exhaust_vol: 0.014
+        reversal_mom_min: 0.012
+        rsi_overbought: 68
+        rsi_oversold: 32
+        momentum_dir_min: 0.0012
+        volatility_20d_max: 0.012
+        rsi_neutral_center: 50
+        rsi_neutral_band: 12
+        rsi_bull: 55
+        rsi_bear: 45
+        macd_hist_max: 0.015
+        recent_range_max: 0.008
+
+# 评估口径：主 KPI 以近期样本外为准，降低历史叙事污染权重
+evaluation:
+  primary_since: "2020-01-01"      # Web/归因主展示区间起点
+
+backtest:
+  method: "expanding"
+  train_ratio: 0.75                # 未指定 test_start_date 时，用后段 25% 做回测
+  test_start_date: "2015-05-08"    # 闲置四品种齐全首日（repo/shibor 2015-05-08 起）
+  min_train_bars: 126              # 约半年预热后进入样本外回测（≈2005-07 起）
+  rebalance_freq: 5
+  commission: 0.0003
+  slippage: 0.0005
+
+  strategy:
+    # ── 长期价投：趋势定底仓，研判调叠加，结构性风险才减仓，过热兑现留弹药 ──
+    # 生产默认回到「牛50 / 熊顶20」财富曲线；强弱牛+catch-up 机制保留，默认不激进抬仓
+    # （进取实验：65/80 总收益 59%；55/70→70%；50/65+追赶→73% — 均牺牲闲置袖套）
+    only_trade_high_conf: true
+    confidence_threshold: 0.50
+    min_overlay_confidence: 0.48
+    position_mode: "core_overlay"
+    base_position: 0.25
+    bull_regime_base: 0.50
+    bull_strong_base: 0.50          # =弱牛 → 不强行抬强牛；要进取可改 0.65~0.80
+    bull_strong_band: 0.06
+    bull_strong_sma_col: "sma_20"
+    bear_regime_base: 0.0
+    bear_regime_cap: 0.20
+    trend_filter: true
+    trend_sma_col: "sma_60"
+    trend_neutral_band: 0.03
+    bear_derisk: true
+    bear_derisk_affects_base: true
+    structural_release_only: true
+    bear_derisk_min_conf: 0.58
+    bear_floor: 0.0
+    emergency_reduce_cooldown_days: 5
+    max_position: 1.0
+    max_target_position: 1.0
+    allow_short: false
+    flat_on_low_conf: true
+
+    confidence_scaling: true
+    min_conf_scale: 0.45
+    neutral_overlay_cap: 0.28
+    neutral_overlay_scale: 0.28
+    overlay_prob_weight: 0.50
+    overlay_edge_weight: 0.25
+    overlay_conf_weight: 0.25
+    overlay_conviction_boost: 0.40
+    high_conviction_threshold: 0.65
+    high_conviction_boost: 0.25
+    neutral_cap: 0.18
+    bear_cap: 0.20
+    use_edge_percentile: true
+    edge_lookback: 48
+    edge_lookback_min: 16
+    edge_threshold: 0.30
+    partial_rebalance: false
+    position_cycle: true
+    build_step: 0.10
+    residual_build: true
+    residual_build_ratio: 0.40
+    bull_catch_up_gap: 0.35         # 默认较少触发；进取可降到 0.15、step 0.20
+    bull_catch_up_step: 0.15
+    release_step: 0.10
+    release_hysteresis: 0.10
+    position_tiers: [0.0, 0.10, 0.20, 0.25, 0.40, 0.50, 0.70, 0.85, 1.0]
+    euphoria_rsi: 72
+    euphoria_momentum_5d: 0.025
+    risk_volatility_20d: 0.020
+    trade_epsilon: 0.02
+
+    min_hold_periods: 10            # 最短持仓约两周
+    cooldown_periods: 5
+    stop_loss: 0.08                  # 单日大跌 8% 才紧急减叠加
+    emergency_reduce_scale: 0.6
+    rebalance_step: 0.35
+
+    # 按渠道覆盖
+    by_provider:
+      tuzi_sonnet:
+        bear_regime_base: 0.0
+    # A1 曾试 deepseek 降换手 → 未通过已回退
+
+    # 多 LLM 分歧降仓：已试 A/B，伤收益（71% vs 79%）→ 默认关，保留开关
+    disagreement_gate:
+      enabled: false
+      min_agree: 0.50          # 一致比例 ≤ 此值 → min_scale
+      full_agree: 0.75         # ≥ 此值 → scale=1（不加信任）
+      min_scale: 0.35          # 最大分歧时，相对底仓的仓位幅度保留比例
+
+    # 损益非对称 Selective size（研究实验，默认关）
+    selective_size:
+      enabled: false
+      agree_min: 0.75          # 与 conf_min 同时满足才保留 overlay
+      conf_min: 0.62
+      weak_scale: 0.40         # 弱信号日：相对底仓保留 40% 偏离
+
+    # 连错反做消融（研究实验，默认关；预期不通过）
+    invert_after_misses:
+      enabled: false
+      miss_days: 2
+      conf_min: 0.62
+
+    # B：分区准确率缩放加仓（B1 保留）
+    partition_overlay_scale:
+      enabled: true
+      add_only: true
+      low_accuracy: 0.45
+      high_accuracy: 0.55
+      low_scale: 0.50
+      high_scale: 1.15
+
+    weekly_decision:
+      enabled: false                 # 关闭周频，改为日频
+
+    weekly_rebalance:
+      enabled: false                 # 日频不需要周调仓
+      interval_days: 5              # 兜底：若无交易日历则按间隔
+      full_move_on_rebalance: false  # 渐进到阶梯，不一跳到位
+      max_add_multiplier: 1.5
+      max_reduce_scale: 0.6
+
+    systemic_risk_exit:
+      enabled: true
+      daily_crash: 0.035
+      rolling_5d_loss: 0.08
+      vol_20d_threshold: 0.024
+      below_sma_pct: 0.06
+      high_conf_bear_exit: true
+      exit_scale: 0.55
+
+    take_profit:
+      enabled: true
+      gain_from_entry: 0.10          # 浮盈 10% 起兑现叠加
+      trim_scale: 0.40
+      gain_tier_2: 0.22              # 浮盈 22% 加大兑现
+      trim_scale_2: 0.55
+      euphoria_take: true            # RSI/动量过热时兑现
+      euphoria_trim_scale: 0.45
+      immediate: false               # 止盈走渐减，不急刹
+      trailing_peak_dd: 0.06
+      trailing_trim_scale: 0.45
+
+    vol_target_enabled: true
+    vol_target_annual: 0.16
+    vol_target_annual_bull: 0.16     # 与常态一致；进取可提到 0.20
+    vol_feature_col: "volatility_20d"
+    vol_cap_min: 0.20
+    vol_cap_max: 1.0
+
+    dual_freq_gate: false           # 硬切：关闭日+周双频门控
+    dual_freq_week_bear_scale: 0.90
+    dual_freq_daily_bull_week_bear_scale: 0.70
+
+    confidence_isotonic:
+      enabled: false               # 与 return_calibration 功能重叠，暂关
+      lookback: 400
+      min_samples: 60
+      refit_every: 25
+      fallback_shrink: 0.88
+
+    # 置信度→历史收益映射仓位（去置信度虚高）
+    return_calibration:
+      enabled: true
+      lookback: 252
+      min_samples: 8
+      conf_bin_width: 0.05
+      min_scale: 0.10
+      max_scale: 1.0
+      fallback_scale: 0.60          # v1 0.40 → 起步阶段不再打4折，给叠加更多空间
+      widen_bins: 1
+
+# ============ 组合配置模式 ============
+# legacy: HS300 core_overlay + 闲置三层（现状）
+# unified_sharpe: 六袖统一账本（进攻/防守/现金流）
+portfolio:
+  allocation_mode: "unified_sharpe"   # legacy | unified_sharpe
+  unified_sharpe:
+    lookback: 126
+    rebalance: "weekly"       # daily | weekly（week_end 调仓）
+    # 主权益锚 60/30/10：进攻主导，防守次之，现金流托底
+    anchor_blend: 0.60        # 组权重：锚定 vs 滚动夏普
+    within_group: "complementary"  # inv_vol | complementary（组内配对互补）
+    sharpe_floor: 0.0
+    vol_floor_annual: 0.10    # 组夏普分母年化波动下限（压制货币/逆回购虚高夏普）
+    weight_ema_span: 8        # 加强平滑，压周频噪声换手（计全袖手续费后）
+    rebalance_step: 0.55      # 非 risk_off：每周只向目标移动 55%
+    trade_deadband: 0.04      # L1 变动 <4% 不调仓，省手续费
+    # 进攻(沪深300↔纳指)：加大相对夏普权重 + 放宽组内边界 → 相对权重摆幅更大
+    pair_complement:
+      enabled: true
+      inv_vol_blend: 0.25     # 略增逆波动，减少组内来回抽打
+      relative_lookback: 42   # 更短窗，相对强弱更敏感
+      member_min: 0.22        # 收窄组内摆幅，降 CSI↔纳指换手
+      member_max: 0.78
+      corr_diversify: true
+      corr_lookback: 63
+      high_corr: 0.70         # 更高才强行拉回等权（原 0.55）
+    group_caps:
+      offense:
+        min: 0.22
+        max: 0.70            # 收进攻顶：80%→70%，压高波段夏普拖累
+        anchor: 0.55         # 略降锚，常态更均衡
+      defense:
+        min: 0.15
+        max: 0.48
+        anchor: 0.32
+      cashflow:
+        min: 0.06
+        max: 0.22
+        anchor: 0.13
+    llm_tilt:
+      enabled: true
+      # LLM 在互补基线上偏移加大，进一步拉开沪深/纳指
+      blend_with_base: 0.45
+      min_csi300_share_in_offense: 0.18
+      max_csi300_share_in_offense: 0.82
+      neutral_share: 0.50
+    # 敢砍 / 敢加：最终层覆盖（在 EMA 之后生效，避免被平滑吃掉）
+    risk_off:
+      enabled: true
+      conf_min: 0.70
+      bearish_pred: -1
+      offense_scale: 0.42
+      offense_cap: 0.30
+      offense_floor: 0.15
+      also_on_bear_regime: true
+      bear_regime_scale: 0.55
+      release_to_defense: 0.75
+    risk_on:
+      enabled: true
+      conf_min: 0.72          # 略提高加仓门槛
+      bullish_pred: 1
+      offense_scale: 1.10     # 敢加收一档：1.22→1.10
+      offense_floor: 0.50     # 牛市下限 55%→50%
+      also_on_bull_regime: true
+      bull_regime_scale: 1.06
+      take_from_defense: 0.65
+
+# ============ 闲置资金管理 ============
+# 策略仓位之外的现金部分：三层配置（风险预算 → 状态调整 → LLM 覆盖）
+# unified_sharpe 模式下闲置五袖不再单独叠加纳指进攻（纳指升格为进攻袖）
+cash_management:
+  enabled: true
+  mode: "three_layer"          # fixed | three_layer
+  # 锚定：金≈35% · 纳≈35% · 国债/货币/逆回购各≈10%
+  # 再经三层配置（逆波动 + 状态偏移 + LLM）动态调比例
+  weights:
+    gold: 0.35           # 黄金ETF 518880
+    bond: 0.10           # 国债ETF 511010
+    nasdaq: 0.35         # 纳指ETF 513100
+    repo: 0.10           # 国债逆回购（shibor O/N * 0.85）
+    money_market: 0.10   # 货币 ETF 511880
+
+  allocation:
+    three_layer:
+      enabled: true
+      risk_budget:
+        vol_lookback: 60
+        min_vol: 0.05
+        default_vol: 0.15
+        anchor_blend: 0.35     # 35% 锚定 + 65% 逆波动
+      regime:
+        enabled: true
+        max_shift: 0.15        # 单层最大偏移 ±15%
+        trend:
+          sma_col: "sma_60"
+          bear_threshold: -0.02
+        volatility:
+          col: "volatility_20d"
+          lookback: 252
+          low_pct: 0.33
+          high_pct: 0.67
+        # 牛→加金/纳、压债与现金；熊/高波动→砍纳、加金，小幅加债/现金
+        shifts:
+          bull_low:
+            equity_mult: 1.12
+            nasdaq: 0.10
+            gold: 0.04
+            bond: -0.05
+            repo: -0.045
+            mm: -0.045
+          bull_high:
+            equity_mult: 0.95
+            nasdaq: -0.08
+            gold: 0.06
+            bond: 0.01
+            repo: 0.005
+            mm: 0.005
+          bull_mid:
+            equity_mult: 1.05
+            nasdaq: 0.05
+            gold: 0.02
+            bond: -0.03
+            repo: -0.02
+            mm: -0.02
+          bear_low:
+            equity_mult: 0.88
+            nasdaq: -0.14
+            gold: 0.08
+            bond: 0.02
+            repo: 0.02
+            mm: 0.02
+          bear_high:
+            equity_mult: 0.75
+            nasdaq: -0.18
+            gold: 0.10
+            bond: 0.03
+            repo: 0.025
+            mm: 0.025
+          bear_mid:
+            equity_mult: 0.82
+            nasdaq: -0.14
+            gold: 0.08
+            bond: 0.02
+            repo: 0.02
+            mm: 0.02
+          neutral_low:
+            equity_mult: 1.02
+            nasdaq: 0.03
+            gold: 0.01
+            bond: -0.02
+            repo: -0.01
+            mm: -0.01
+          neutral_high:
+            equity_mult: 0.88
+            nasdaq: -0.10
+            gold: 0.06
+            bond: 0.02
+            repo: 0.01
+            mm: 0.01
+          neutral_mid:
+            equity_mult: 0.98
+            nasdaq: 0.0
+            gold: 0.0
+            bond: 0.0
+            repo: 0.0
+            mm: 0.0
+      llm_override:
+        enabled: true
+        min_confidence: 0.80          # 仅高确信时压仓
+        bearish_pred: -1
+        equity_floor: 0.22            # 高置信判跌多腾闲置给金
+        defensive_boost: 0.12         # 释放额度：偏黄金，削减纳指
+      # 熊市启用 equity_mult，额外压股票敞口
+      apply_equity_mult: true
+      equity_mult_strength: 0.5
+      equity_mult_bear_only: true
+      # E：闲置硬夹/平滑 — E12 伤闲置收益已回退
+      weight_bounds: {}
+      weight_ema_span: 0
+
+  # 数据源配置
+  sources:
+    gold_etf: true
+    bond_etf: true
+    nasdaq_etf: true
+    money_market_etf: true
+    repo: true
+  gold_symbol: "518880"
+  bond_symbol: "511010"
+  nasdaq_symbol: "513100"
+  mm_symbol: "511880"
+  # 逆回购利率 = shibor O/N * repo_spread
+  repo_spread: 0.85
+  # 缓存文件名
+  gold_cache: "cash_gold_518880.parquet"
+  bond_cache: "cash_bond_511010.parquet"
+  nasdaq_cache: "cash_nasdaq_513100.parquet"
+  mm_cache: "cash_mm_511880.parquet"
+  repo_cache: "cash_repo.parquet"
+  portfolio_return_col: "cash_portfolio_return"
+
+# ============ 多策略资金组合（实验：不改 active_api，除非回测通过）============
+# 各渠道独立仓位按因果 trailing Sharpe 加权；主袖下限防漂
+strategy_portfolio:
+  primary: deepseek
+  members:
+    - deepseek
+    - qwen
+    - glm
+  lookback: 252
+  min_history: 60
+  primary_floor: 0.50
+  weight_method: sharpe          # sharpe | equal
+  temperature: 1.0
+  commission: 0.0003
+  slippage: 0.0005
+
+# ============ 模拟实盘（自主交易参考，非真实下单）============
+paper_trading:
+  enabled: true
+  initial_capital: 1000000       # 初始模拟资金（元）
+  auto_run: false                # 由 auto_update 统一调度
+  refresh_data: true             # 每轮执行前刷新行情
+  schedule_time: "16:30"         # 周五执行（Asia/Shanghai，systemd timer=Fri）
+  schedule_weekday: "Fri"        # 周频硬切：仅周五（当周最后交易日）跑
+  start_date: "2026-07-10"       # 模拟实盘起始日
+
+# ============ 收盘后自动更新（数据 + 增量回测 + 模拟实盘）============
+auto_update:
+  enabled: true
+  schedule_time: "16:45"         # 周五收盘后（建议晚于 paper_trading）
+  schedule_weekday: "Fri"
+  refresh_data: true             # 拉取最新行情写入 DB
+  incremental_backtest: true     # true=仅新 bar/week_end 调 LLM API，历史读 llm_cache
+  allow_full_backtest: false     # 定时更新禁止全量；策略变更也只走增量
+  rewind_bars: 130               # 增量重放窗口（约 26 周 ×5 日）
+  run_paper_trading: true        # 回测后同步跑模拟实盘
+
+logging:
+  level: "INFO"
+  structured: true
+  feature_snapshot: true
+  mirror_to_loguru: false
+  save_predictions: true
+  save_models: true

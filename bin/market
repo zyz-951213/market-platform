@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# market-platform 统一入口
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+market — 统一入口（原 database / market-agents / market-predictor）
+
+用法:
+  market agents    <命令>       行为分析（委托 market-agents）
+  market predictor <命令>       指数预测（委托 market-predictor）
+  market data      <脚本> [参数] 数据底座（运行 packages/data/后端/脚本/<脚本>.py）
+
+示例:
+  market agents run --backtest
+  market predictor pipeline -- --step data
+  market data 更新金融市场数据.py
+EOF
+}
+
+case "${1:-}" in
+  agents)
+    shift
+    exec market-agents "$@"
+    ;;
+  predictor)
+    shift
+    exec market-predictor "$@"
+    ;;
+  data)
+    shift
+    script="${1:-}"
+    if [[ -z "$script" ]]; then
+      echo "缺少脚本名" >&2
+      usage >&2
+      exit 1
+    fi
+    exec python "$ROOT/packages/data/后端/脚本/$script" "${@:2}"
+    ;;
+  -h|--help|"")
+    usage
+    ;;
+  *)
+    echo "未知模块: ${1:-}" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

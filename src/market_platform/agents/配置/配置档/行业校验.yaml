@@ -1,0 +1,96 @@
+# 跨行业验证 — 申万一级行业各选 2~3 只代表性龙头
+# 用法: python 后端/脚本/分析全市场.py --config 后端/配置/配置档/行业校验.yaml
+
+data:
+  root: data
+  symbol: "000001"
+  market: "sz"
+  start_date: "20230101"
+  end_date: null
+  use_rolling_window: true
+  rolling_window_days: 1095
+  fetch_sleep_seconds: 1.5
+  fallback_daily_proxy: true
+  daily_sources:
+    primary: eastmoney
+    fallback: [tencent, sina]
+  minute_sources:
+    primary: baostock
+    fallback: [sina, eastmoney, daily_proxy]
+  fund_flow_sources:
+    primary: eastmoney_direct
+    fallback: [sina, eastmoney, volume_proxy]
+
+batch:
+  symbols:
+    # 银行
+    - { symbol: "600000", market: "sh", sector: "银行", name: "浦发银行" }
+    - { symbol: "601398", market: "sh", sector: "银行", name: "工商银行" }
+    - { symbol: "000001", market: "sz", sector: "银行", name: "平安银行" }
+    # 非银金融
+    - { symbol: "600030", market: "sh", sector: "非银金融", name: "中信证券" }
+    - { symbol: "601318", market: "sh", sector: "非银金融", name: "中国平安" }
+    # 食品饮料
+    - { symbol: "600519", market: "sh", sector: "食品饮料", name: "贵州茅台" }
+    - { symbol: "000858", market: "sz", sector: "食品饮料", name: "五粮液" }
+    - { symbol: "600887", market: "sh", sector: "食品饮料", name: "伊利股份" }
+    # 医药生物
+    - { symbol: "600276", market: "sh", sector: "医药生物", name: "恒瑞医药" }
+    - { symbol: "000538", market: "sz", sector: "医药生物", name: "云南白药" }
+    # 电子
+    - { symbol: "002475", market: "sz", sector: "电子", name: "立讯精密" }
+    - { symbol: "603501", market: "sh", sector: "电子", name: "韦尔股份" }
+    # 计算机
+    - { symbol: "002230", market: "sz", sector: "计算机", name: "科大讯飞" }
+    - { symbol: "600570", market: "sh", sector: "计算机", name: "恒生电子" }
+    # 电力设备
+    - { symbol: "300750", market: "sz", sector: "电力设备", name: "宁德时代" }
+    - { symbol: "601012", market: "sh", sector: "电力设备", name: "隆基绿能" }
+    # 汽车
+    - { symbol: "002594", market: "sz", sector: "汽车", name: "比亚迪" }
+    - { symbol: "601633", market: "sh", sector: "汽车", name: "长城汽车" }
+    # 房地产
+    - { symbol: "000002", market: "sz", sector: "房地产", name: "万科A" }
+    - { symbol: "600048", market: "sh", sector: "房地产", name: "保利发展" }
+    # 有色金属
+    - { symbol: "601899", market: "sh", sector: "有色金属", name: "紫金矿业" }
+    - { symbol: "600547", market: "sh", sector: "有色金属", name: "山东黄金" }
+    # 煤炭
+    - { symbol: "601088", market: "sh", sector: "煤炭", name: "中国神华" }
+    - { symbol: "600188", market: "sh", sector: "煤炭", name: "兖矿能源" }
+    # 交通运输
+    - { symbol: "601006", market: "sh", sector: "交通运输", name: "大秦铁路" }
+    - { symbol: "600009", market: "sh", sector: "交通运输", name: "上海机场" }
+
+nmf:
+  n_components: 5
+  max_iter: 500
+  random_state: 42
+
+features:
+  minute:
+    volume_spike_window: 20
+    realized_vol_window: 5
+
+state:
+  method: hmm
+  n_states: 5
+  residual_z_threshold: 2.0
+  cluster_map_method: forward_return
+  forward_horizon_days: 1
+
+backtest:
+  initial_capital: 1000000
+  commission: 0.0003
+  optimize_step: 0.1
+  drawdown_penalty: 0.5
+  optimize_objective: trend
+  min_position_floor: 0.4
+  mid_position_floor: 0.6
+  strong_position_floor: 0.9
+  walk_forward_ratio: 0.7
+
+output:
+  root: outputs
+  group_by_sector: true
+  name_as_folder: true

@@ -1,0 +1,23 @@
+{
+  "updated_at": "2026-07-12T13:37:40",
+  "target_source": "signals",
+  "target_portfolio_id": "",
+  "cash_ratio": 0.1,
+  "note": "",
+  "positions": [
+    {
+      "symbol": "600000",
+      "name": "",
+      "weight": 0.5,
+      "quantity": null,
+      "cost": null
+    },
+    {
+      "symbol": "600036",
+      "name": "",
+      "weight": 0.4,
+      "quantity": null,
+      "cost": null
+    }
+  ]
+}

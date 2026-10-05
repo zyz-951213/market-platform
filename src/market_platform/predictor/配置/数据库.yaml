@@ -1,0 +1,8 @@
+enabled: true
+dsn: postgresql:///%E9%87%91%E8%9E%8D%E5%B8%82%E5%9C%BA%E6%95%B0%E6%8D%AE
+search_path: 指数预测, 公共, 行情增量
+write_files: false
+file_fallback: false
+read_from_pg: true
+batch_size: 2000
+connect_timeout: 10
