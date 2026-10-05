@@ -335,10 +335,10 @@ def upsert_watermark(conn, rows: list[dict[str, Any]], dry_run: bool) -> None:
     conn.commit()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     conn = psycopg.connect(DSN)
     try:

@@ -1,21 +1,17 @@
-"""启动数据库管理系统 Web 服务。
+"""启动数据底座 Web 服务(独立端口;统一站点请用 `market-platform web`)。
 
-前端请先 `cd 前端 && npm run build`，或开发模式另开 `npm run dev`。
+用法: python -m market_platform.data.脚本.启动Web
 """
 from __future__ import annotations
 import os
-import sys
+
 import uvicorn
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     port = int(os.environ.get("API_PORT", "18766"))
     host = os.environ.get("API_HOST", "127.0.0.1")
     os.environ.setdefault("SERVE_FRONTEND", "1")
-
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    if root not in sys.path:
-        sys.path.insert(0, root)
 
     print(f"金融市场数据管理: http://{host}:{port}")
     print(f"API 文档: http://{host}:{port}/docs")

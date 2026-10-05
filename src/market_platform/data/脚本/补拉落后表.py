@@ -29,7 +29,7 @@ TASKS = [
 ]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     updater = DataUpdater(DB_NAME, 数据库DSN())
     失败 = 0
     for name, fn in TASKS:
