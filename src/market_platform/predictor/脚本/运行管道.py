@@ -182,8 +182,13 @@ def run_llm_backtest(
     api_cutoff_date: Optional[str] = None,
     provider: Optional[str] = None,
     is_latest: bool = True,
+    cache_only: bool = False,
 ) -> BacktestResult | None:
-    """运行 LLM 回测；save=False 时仅返回结果不写入存储。"""
+    """运行 LLM 回测；save=False 时仅返回结果不写入存储。
+
+    `cache_only=True`:只重放数据库/文件里的既有 LLM 缓存,未命中即报错,**绝不调用 API**
+    (额度有限时跑回测用)。
+    """
     cfg = get_config()
     index_code = cfg["data"]["index_code"]
     df = _load_processed_df(index_code)
@@ -265,6 +270,8 @@ def run_llm_backtest(
             predictor.set_api_cutoff_date(api_cutoff_date)
             # 回测只读 llm_cache，禁止未命中时把新 digest 写回污染库
             predictor.set_cache_write(False)
+            # 只读缓存模式:未命中直接报错,不消耗 API 额度
+            predictor.set_cache_only(cache_only)
             predictor.reset_cache_stats()
             predictor.bind_dataframe(df)
             predictor.train(train_df)
@@ -649,6 +656,7 @@ def step_backtest(
     provider: Optional[str] = None,
     all_providers: bool = False,
     primary: str = "deepseek",
+    cache_only: bool = False,
 ):
     """回测评估"""
     logger.info("=" * 50)
@@ -671,6 +679,7 @@ def step_backtest(
             save=True,
             provider=provider,
             is_latest=True,
+            cache_only=cache_only,
         )
 
     logger.error(f"❌ 未知模型: {model_name}（可选: llm, transformer）")
@@ -697,6 +706,8 @@ def main(argv: list[str] | None = None):
                         help="llm-cache 起始日（默认 backtest.test_start_date）")
     parser.add_argument("--end", type=str, default=None,
                         help="llm-cache 结束日（默认数据末日）")
+    parser.add_argument("--cache-only", action="store_true",
+                        help="只重放数据库既有 LLM 缓存,未命中即报错,绝不调用 API")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -711,6 +722,7 @@ def main(argv: list[str] | None = None):
             provider=args.provider,
             all_providers=args.all_providers,
             primary=args.primary,
+            cache_only=args.cache_only,
         )
     elif args.step == "data":
         step_data()
@@ -733,6 +745,7 @@ def main(argv: list[str] | None = None):
             provider=args.provider,
             all_providers=args.all_providers,
             primary=args.primary,
+            cache_only=args.cache_only,
         )
 
 

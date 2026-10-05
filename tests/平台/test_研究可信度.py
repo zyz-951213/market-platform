@@ -487,3 +487,45 @@ def test_真实_LM_渠道仍保留_cutoff_语义():
 
     源码 = inspect.getsource(LLMApiPredictor.set_api_cutoff_date)
     assert "_api_cutoff_date" in 源码, "真实渠道的 cutoff 语义被破坏"
+
+
+# ── 只读缓存安全阀:额度有限时不得因为缺缓存而调 API ────────────────────────
+def test_cache_only_未命中时拒绝调用_API():
+    from market_platform.predictor.分析.推断.语言模型预测 import LLMApiPredictor
+
+    p = LLMApiPredictor.__new__(LLMApiPredictor)  # 不跑 __init__,避免读配置/建客户端
+    p._cache_only = True
+    p._cache_write = False
+    p._api_cutoff_date = None
+    p._cache_hits = 0
+    p._cache_misses = 0
+    p.api_cfg = {"cache_enabled": True}
+
+    def 无缓存(prompt, bar_date=None):
+        return None
+
+    p._load_cached = 无缓存  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError) as 异常:
+        p.analyze_prompt("测试 prompt", bar_date="2026-09-30")
+    assert "拒绝调用 API" in str(异常.value) or "只读缓存" in str(异常.value)
+
+
+def test_cache_only_默认关闭():
+    from market_platform.predictor.分析.推断.语言模型预测 import LLMApiPredictor
+
+    p = LLMApiPredictor.__new__(LLMApiPredictor)
+    p._cache_only = False
+    assert p._cache_only is False
+
+
+def test_回测记录白名单包含披露字段():
+    """TASK-003:丢弃样本数与口径降级必须能落库,否则披露只活在日志里。"""
+    import inspect
+
+    from market_platform.predictor.存储.数据库 import PostgresStore
+
+    源码 = inspect.getsource(PostgresStore.save_backtest_run)
+    for 键 in ("dropped_bars", "failed_train_blocks", "failed_predict_bars",
+               "unified_fallback_reason", "allocation_mode"):
+        assert 键 in 源码, f"回测记录未持久化 {键}"

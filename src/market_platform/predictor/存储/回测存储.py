@@ -221,6 +221,12 @@ def save_backtest_result(
         "llm_model": provider_model_id(provider),
         "prompt_version": load_config().get("model", {}).get("llm", {}).get("prompt", {}).get("version"),
         "llm_call_count": int(getattr(result, "llm_call_count", 0) or 0),
+        # TASK-003:把"丢弃样本"与"口径降级"写进回测记录,让披露随数据留存
+        # (此前只活在日志里;评审 R10/R11)
+        "dropped_bars": int(getattr(result, "丢弃bar数", 0) or 0),
+        "failed_train_blocks": int(getattr(result, "训练失败块数", 0) or 0),
+        "failed_predict_bars": int(getattr(result, "预测失败bar数", 0) or 0),
+        "unified_fallback_reason": getattr(result, "统一夏普降级原因", None),
         "weekly_decision": bool(
             (load_config().get("backtest", {}).get("strategy", {}).get("weekly_decision") or {}).get("enabled", False)
         ),

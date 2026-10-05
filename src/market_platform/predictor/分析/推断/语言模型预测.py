@@ -120,6 +120,8 @@ class LLMApiPredictor:
         self._cache_misses = 0
         self._api_cutoff_date: Optional[str] = None
         self._cache_write: bool = True  # False：只读缓存（回测禁止污染 llm_cache）
+        # 只读缓存模式:未命中即报错,**绝不调用 API**(额度有限时的安全阀)
+        self._cache_only: bool = False
         self._last_request_mono: float = 0.0
 
     def reset_cache_stats(self) -> None:
@@ -136,6 +138,14 @@ class LLMApiPredictor:
     def set_cache_write(self, enabled: bool) -> None:
         """是否允许将新推理写入 llm_cache。回测应关闭，仅 llm-cache 预热写入。"""
         self._cache_write = bool(enabled)
+
+    def set_cache_only(self, enabled: bool = True) -> None:
+        """只读缓存:缓存未命中时**抛错**而不是调用 API。
+
+        用途:LLM 额度有限时跑回测/复盘,确保只重放 `llm_cache` 里的既有结果,
+        不会因为某个 bar 缺缓存而默默产生 API 费用。
+        """
+        self._cache_only = bool(enabled)
 
     def _throttle_before_request(self) -> None:
         """按渠道 min_interval_sec 限速，避免打穿速率配额。"""
@@ -379,6 +389,12 @@ class LLMApiPredictor:
                 cached = dict(cached)
                 cached["from_cache"] = True
                 return cached
+
+        if self._cache_only:
+            raise RuntimeError(
+                f"只读缓存模式:bar_date={bar_date} 在 llm_cache 中无命中,"
+                "已拒绝调用 API(避免消耗额度)。如需覆盖该日期,请先预热 llm-cache。"
+            )
 
         if (
             bar_date

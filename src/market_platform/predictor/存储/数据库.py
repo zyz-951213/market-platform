@@ -357,6 +357,10 @@ class PostgresStore:
                 "avg_position", "cash_mgmt_enabled", "cash_return", "strategy_only_return",
                 "llm_provider", "llm_model", "prompt_version", "llm_call_count", "weekly_decision",
                 "week_accuracy", "day_accuracy",
+                # TASK-003:口径与丢弃样本的披露字段,必须随记录留存(否则只活在日志里)
+                "allocation_mode", "static_4020_return", "equal_six_return",
+                "dropped_bars", "failed_train_blocks", "failed_predict_bars",
+                "unified_fallback_reason",
             )
         }
         conn = self._conn()

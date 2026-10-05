@@ -1903,7 +1903,7 @@ class BacktestEngine:
         result.统一夏普降级原因 = self.统一夏普降级原因  # type: ignore[attr-defined]
         if self.训练失败块数 or self.预测失败bar数:
             logger.warning(
-                "⚠️ 本次回测丢弃样本: 训练失败块=%d(共 %d 根 bar 未计入序列), 预测失败 bar=%d;"
+                "⚠️ 本次回测丢弃样本: 训练失败块={}(未计入 {} 根 bar), 预测失败 bar={};"
                 "年化/Sharpe/回撤均基于剩余期数计算",
                 self.训练失败块数, self.丢弃bar数, self.预测失败bar数,
             )
