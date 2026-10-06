@@ -225,11 +225,15 @@ def 检查日覆盖完整度(覆盖阈值: float = 0.25, 天数: int = 120) -> l
             残缺 = [(d, n) for d, n in 每日 if n < 参照 * 覆盖阈值]
             if 残缺:
                 样例 = ", ".join(f"{d}({n})" for d, n in 残缺[:3])
+                # 区分两种成因:偶发漏跑(几天) vs 换源后标的范围收缩(自某日起持续到最新日,
+                # 如 国内指数日行情文件 4450→8、国内期货日交易数据 463→31)
+                持续 = 残缺[-1][0] == 每日[-1][0] and len(残缺) > max(3, int(len(每日) * 0.3))
+                提示 = "  ← 自某日起持续至今,可能是标的范围变更(换源后只维护子集)而非故障" if 持续 else ""
                 问题.append(
                     (
                         "警告",
                         f"{数据源}.{数据集}: 近 {天数} 天里有 {len(残缺)} 个残缺日"
-                        f"(< 参照 {参照} 行的 {覆盖阈值:.0%}): {样例}",
+                        f"(< p90 {参照} 行的 {覆盖阈值:.0%}): {样例}{提示}",
                     )
                 )
     return 问题
@@ -249,7 +253,7 @@ def 检查应用层日行情口径() -> list[tuple[str, str]]:
     with psycopg.connect(数据库DSN()) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT count(*) FILTER (WHERE 成交额 = 成交量) AS 额等于量,
+            SELECT count(*) FILTER (WHERE 成交额 = 成交量 AND 成交量 > 0) AS 额等于量,
                    count(*) AS 总行
             FROM 行为分析.日行情
             """
@@ -270,7 +274,7 @@ def 检查应用层日行情口径() -> list[tuple[str, str]]:
         问题.append(
             (
                 "错误",
-                f"行为分析.日行情 有 {额等于量}/{总行} 行『成交额 = 成交量』"
+                f"行为分析.日行情 有 {额等于量}/{总行} 行有成交却『成交额 = 成交量』"
                 f"(腾讯接口把成交量装在 amount 列;修复: market-platform agents 修复日行情)",
             )
         )

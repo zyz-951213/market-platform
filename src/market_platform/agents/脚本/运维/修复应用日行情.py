@@ -39,7 +39,8 @@ def 修复应用日行情(
 
     from market_platform.core.配置 import 数据库DSN
 
-    统计: dict[str, Any] = {"口径修复行": 0, "补齐缺失行": 0, "批次数": 0, "起": None, "止": None}
+    统计: dict[str, Any] = {"口径修复行": 0, "补齐缺失行": 0, "无源换算行": 0,
+                            "批次数": 0, "起": None, "止": None}
 
     with psycopg.connect(数据库DSN(), autocommit=True) as conn, conn.cursor() as cur:
         cur.execute('SELECT min("交易日期"), max("交易日期") FROM 行为分析.日行情')
@@ -95,6 +96,18 @@ def 修复应用日行情(
                 待补 = cur.fetchone()[0]
                 统计["口径修复行"] += 待修
                 统计["补齐缺失行"] += 待补
+                cur.execute(
+                    """
+                    SELECT count(*) FROM 行为分析.日行情 a
+                     WHERE a."交易日期" BETWEEN %s AND %s
+                       AND a."成交额" = a."成交量" AND a."成交量" > 0
+                       AND a."收盘价" IS NOT NULL AND a."收盘价" <> 1
+                       AND NOT EXISTS (SELECT 1 FROM 公共.日行情 p
+                                        WHERE p.stock_code = a."证券代码" AND p.trade_date = a."交易日期")
+                    """,
+                    (甲, 乙),
+                )
+                统计["无源换算行"] += cur.fetchone()[0]
                 continue
 
             # ① 统一口径(股/元)
@@ -129,6 +142,27 @@ def 修复应用日行情(
                 (甲, 乙),
             )
             统计["补齐缺失行"] += cur.rowcount or 0
+
+            # ③ 无源可比行:公共层缺该日,只能靠"腾讯签名"判定 ——
+            #    `成交额 = 成交量`(且成交量 > 0)只可能来自"把成交量当成交额"的旧写入路径,
+            #    此时成交量是"手"口径 ⇒ ×100 转股,成交额按 股 × 收盘 估算(VWAP≈收盘)。
+            #    幂等:换算后 `成交额 = 成交量 × 100 × 收盘` 只有收盘价恰为 1 时才仍相等,
+            #    故显式排除收盘价 = 1 的行(那类行数值上本就无法区分,留给体检报告)。
+            cur.execute(
+                """
+                UPDATE 行为分析.日行情 a
+                   SET "成交量" = a."成交量" * 100,
+                       "成交额" = a."成交量" * 100 * a."收盘价"
+                 WHERE a."交易日期" BETWEEN %s AND %s
+                   AND a."成交额" = a."成交量" AND a."成交量" > 0
+                   AND a."收盘价" IS NOT NULL AND a."收盘价" <> 1
+                   AND NOT EXISTS (
+                     SELECT 1 FROM 公共.日行情 p
+                      WHERE p.stock_code = a."证券代码" AND p.trade_date = a."交易日期")
+                """,
+                (甲, 乙),
+            )
+            统计["无源换算行"] += cur.rowcount or 0
             conn.commit()
 
     return 统计
@@ -147,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"区间 {统计['起']} → {统计['止']}:批次数 {统计['批次数']},"
         f"{'将' if args.dry_run else '已'}修复口径 {统计['口径修复行']} 行,"
-        f"{'将' if args.dry_run else '已'}补齐缺失 {统计['补齐缺失行']} 行"
+        f"{'将' if args.dry_run else '已'}补齐缺失 {统计['补齐缺失行']} 行,"
+        f"{'将' if args.dry_run else '已'}无源换算 {统计['无源换算行']} 行"
     )
     return 0
 
