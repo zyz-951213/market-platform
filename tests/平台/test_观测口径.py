@@ -451,3 +451,67 @@ def test_市场收益构建幂等():
         assert 后 == 前
     finally:
         conn.close()
+
+
+# ── ③ 缺口回填 ───────────────────────────────────────────────────────────
+def test_缺口回填_策略表覆盖当前缺口数据集():
+    from market_platform.data.存储.缺口回填 import 策略表
+
+    # 具备区间回填能力的两个必须存在且为"区间"
+    assert 策略表["龙虎榜"]["级别"] == "区间"
+    assert 策略表["ETF融资融券交易明细表"]["级别"] == "区间"
+    # 快照型必须写明原因(不能只写"待处理")
+    for 名 in ("个股资金流向", "龙虎榜营业部", "ETF基金申购赎回清单"):
+        assert 策略表[名]["级别"] == "快照"
+        assert 策略表[名]["说明"]
+
+
+def test_缺口登记不再有空转的待处理():
+    """回填后:待处理应为 0(要么已修复,要么明确标注不可回填)。"""
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 状态, count(*) FROM 行情增量.缺口登记 GROUP BY 1")
+            分布 = dict(cur.fetchall())
+        assert 分布.get("待处理", 0) == 0, 分布
+        assert 分布.get("已修复", 0) + 分布.get("不可回填", 0) > 0, 分布
+    finally:
+        conn.close()
+
+
+def test_龙虎榜与ETF两融支持显式区间():
+    import inspect
+
+    from market_platform.data.存储 import 数据更新器_补充 as 模块
+
+    assert hasattr(模块, "设龙虎榜回填区间")
+    assert hasattr(模块, "设ETF两融回填区间")
+    assert "stock_lhb_detail_em" in inspect.getsource(模块.update_dragon_tiger)
+    assert "_ETF两融显式区间" in inspect.getsource(模块.update_etf_margin)
+
+
+def test_insert_适配_autocommit_连接():
+    """回归:autocommit 连接里 SAVEPOINT 会报 NoActiveSqlTransaction。"""
+    import inspect
+
+    from market_platform.data.存储.数据更新器 import _insert
+
+    源码 = inspect.getsource(_insert)
+    assert 'getattr(conn, "autocommit"' in 源码
+
+
+# ── ② 前端字典展示 ───────────────────────────────────────────────────────
+def test_前端概览页含市场分段字典面板():
+    from market_platform.core.路径 import 前端根
+
+    页面 = (前端根() / "模块" / "数据底座" / "index.html").read_text(encoding="utf-8")
+    脚本 = (前端根() / "模块" / "数据底座" / "源码" / "页面" / "概览.js").read_text(encoding="utf-8")
+    assert "market-dict-body" in 页面 and "市场分段字典" in 页面
+    assert "市场类型字典" in 脚本 and "loadMarketDict" in 脚本

@@ -265,22 +265,47 @@ def update_etf_list(updater) -> str:
 
 
 # ── 4. 龙虎榜 ──
+_龙虎榜显式区间: tuple | None = None
+
+
+def 设龙虎榜回填区间(起, 止) -> None:
+    """供缺口回填使用:让 update_dragon_tiger 按指定区间取数(见 缺口回填.py)。"""
+    global _龙虎榜显式区间
+    _龙虎榜显式区间 = (起, 止) if 起 and 止 else None
+
+
 def update_dragon_tiger(updater) -> str:
     import akshare as ak
     from datetime import date, timedelta
     conn = updater._get_conn()
     existing = _existing_key_set(conn, "公共", "龙虎榜", "交易日期", "股票代码")
     count = 0
-    # 东财龙虎榜明细(日级): 拉最近 10 天窗口, 已存在跳过
-    for back in range(10):
-        day = date.today() - timedelta(days=back)
+
+    if _龙虎榜显式区间 is not None:
+        # 缺口回填:一次拉整个区间(东财接口支持 start/end)
+        起, 止 = _龙虎榜显式区间
         try:
             df = ak.stock_lhb_detail_em(
-                start_date=day.strftime("%Y%m%d"),
-                end_date=day.strftime("%Y%m%d"),
+                start_date=str(起).replace("-", ""),
+                end_date=str(止).replace("-", ""),
             )
-        except Exception:
-            continue
+        except Exception as e:
+            conn.close()
+            return f"龙虎榜(回填 {起}~{止}): 接口失败({e})"
+        帧列表 = [df]
+    else:
+        帧列表 = []
+        for back in range(10):
+            day = date.today() - timedelta(days=back)
+            try:
+                帧列表.append(ak.stock_lhb_detail_em(
+                    start_date=day.strftime("%Y%m%d"),
+                    end_date=day.strftime("%Y%m%d"),
+                ))
+            except Exception:
+                帧列表.append(None)
+
+    for df in 帧列表:
         if df is None or df.empty:
             continue
         for _, row in df.iterrows():
@@ -345,6 +370,15 @@ def update_dragon_tiger_dept(updater) -> str:
     conn.close()
     return f"龙虎榜营业部: 新增 {count} 条（机构席位）"
 
+_ETF两融显式区间: tuple | None = None
+
+
+def 设ETF两融回填区间(起, 止) -> None:
+    """供缺口回填使用:让 update_etf_margin 按指定区间补(见 缺口回填.py)。"""
+    global _ETF两融显式区间
+    _ETF两融显式区间 = (起, 止) if 起 and 止 else None
+
+
 def update_etf_margin(updater) -> str:
     """ETF融资融券: 上交所两融明细中过滤 ETF，按最近交易日窗口连续补。"""
     import akshare as ak
@@ -362,8 +396,13 @@ def update_etf_margin(updater) -> str:
 
     count = 0
     end_d = date.today()
+    if _ETF两融显式区间 is not None:
+        # 缺口回填:按登记缺口给出的区间取数
+        起, 止 = _ETF两融显式区间
+        start_d = date.fromisoformat(str(起)[:10])
+        end_d = date.fromisoformat(str(止)[:10])
     # 从水位次日或最近 15 天窗口
-    if latest:
+    elif latest:
         start_d = latest + _td(days=1)
         if isinstance(start_d, str):
             start_d = date.fromisoformat(start_d[:10])

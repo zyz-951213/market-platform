@@ -189,15 +189,19 @@ def _insert(conn, schema, table, col_vals, source="akshare"):
         )
     else:
         sql = f'INSERT INTO "{schema}"."{table}" ({cols_str}) VALUES ({ph_str}) ON CONFLICT DO NOTHING'
-    # 用 SAVEPOINT 包住:单条失败只回滚这一条,不炸掉调用方的整个事务
-    with conn.cursor() as cur:
-        cur.execute("SAVEPOINT _insert_sp")
+    # 用 SAVEPOINT 包住:单条失败只回滚这一条,不炸掉调用方的整个事务。
+    # 注意:autocommit 连接里没有事务块,SAVEPOINT 会报 NoActiveSqlTransaction ⇒ 需先判断。
+    用保存点 = not bool(getattr(conn, "autocommit", False))
+    if 用保存点:
+        with conn.cursor() as cur:
+            cur.execute("SAVEPOINT _insert_sp")
     try:
         with conn.cursor() as cur:
             cur.execute(sql, db_vals)
             row = cur.fetchone() if cur.description else None
-        with conn.cursor() as cur:
-            cur.execute("RELEASE SAVEPOINT _insert_sp")
+        if 用保存点:
+            with conn.cursor() as cur:
+                cur.execute("RELEASE SAVEPOINT _insert_sp")
         if row is None:
             _insert_stats["跳过"] += 1
             return False
@@ -205,11 +209,12 @@ def _insert(conn, schema, table, col_vals, source="akshare"):
         _insert_stats["插入" if 插入 else "更新"] += 1
         return True
     except Exception:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("ROLLBACK TO SAVEPOINT _insert_sp")
-        except Exception:
-            pass
+        if 用保存点:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("ROLLBACK TO SAVEPOINT _insert_sp")
+            except Exception:
+                pass
         return False
 
 

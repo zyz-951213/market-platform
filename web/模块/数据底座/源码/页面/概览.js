@@ -39,6 +39,8 @@ export async function loadOverview() {
   renderTopTables(db.top_tables || []);
   renderWatermarks(db.watermarks || []);
   renderSizeChart(db.schemas || []);
+
+  await loadMarketDict();
 }
 
 function renderWatermarks(rows) {
@@ -169,4 +171,44 @@ function renderSizeChart(schemas) {
       },
     ],
   });
+}
+
+/** 前缀列在库里是 text[](preview 返回 JSON 文本),统一格式化成 "60 / 900" */
+function fmtPrefixes(value) {
+  if (Array.isArray(value)) return value.join(" / ");
+  const text = String(value ?? "");
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.join(" / ");
+  } catch {
+    /* 非 JSON 就原样显示 */
+  }
+  return text.replace(/^\{|\}$/g, "");
+}
+
+/** 市场分段字典:把 公共.市场类型字典 直接展示出来(TASK-004) */
+async function loadMarketDict() {
+  const wrap = $("market-dict-body");
+  if (!wrap) return;
+  try {
+    const res = await api("/api/schema/公共/tables/市场类型字典/preview?limit=20");
+    const rows = res?.rows || [];
+    if (!rows.length) {
+      wrap.innerHTML = `<tr><td colspan="4" class="empty-hint">字典表为空</td></tr>`;
+      return;
+    }
+    wrap.innerHTML = rows
+      .map(
+        (r) => `
+      <tr>
+        <td class="num">${escapeHtml(String(r.编码 ?? ""))}</td>
+        <td>${escapeHtml(r.名称 ?? "")}</td>
+        <td>${escapeHtml(fmtPrefixes(r.证券代码前缀))}</td>
+        <td class="hint">${escapeHtml(r.依据 ?? "")}</td>
+      </tr>`,
+      )
+      .join("");
+  } catch (e) {
+    wrap.innerHTML = `<tr><td colspan="4" class="empty-hint">字典读取失败：${escapeHtml(e.message)}</td></tr>`;
+  }
 }
