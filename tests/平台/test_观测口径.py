@@ -689,11 +689,22 @@ def test_缺口补齐判据必须看覆盖度():
     assert "GROUP BY 1" in src, "必须按日统计行数,而不是只判断日期是否存在"
 
 
-def test_日覆盖完整度用中位数参照():
-    """事件驱动型表(龙虎榜)每日行数天然波动,用最大值当参照会误报。"""
+def test_缺口补齐参照取自数据集整体而非区间内部():
+    """回归:参照若取自被检查区间,"整段残缺"的区间会内部自证完整(2026-10-06 两次误判)。"""
+    import inspect
+
+    from market_platform.data.存储.缺口回填 import _区间已补齐
+
+    src = inspect.getsource(_区间已补齐)
+    assert "percentile_cont(0.9)" in src, "参照应为数据集近 365 天日行数的 p90"
+    assert "- 365" in src, "参照窗口必须独立于被检查区间"
+
+
+def test_日覆盖完整度参照用p90():
+    """参照不能用最大(事件驱动表波动大)也不能用中位数(有些表大多数日子本身残缺)。"""
     import inspect
 
     from market_platform.data.存储.数据体检 import 检查日覆盖完整度
 
     src = inspect.getsource(检查日覆盖完整度)
-    assert "中位数" in src and "有序[len(有序) // 2]" in src
+    assert "p90" in src and "0.9" in src

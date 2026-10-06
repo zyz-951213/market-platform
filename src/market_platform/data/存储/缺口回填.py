@@ -195,12 +195,24 @@ def _区间已补齐(conn, 数据源: str, 数据集: str, 起, 止, 覆盖阈�
             (起, 止),
         )
         每日 = {r[0]: int(r[1]) for r in cur.fetchall() if r[0] is not None}
+        # 参照必须取自**数据集整体**(近 365 天每日行数的 p90),不能取自被检查区间 ——
+        # 否则"整段都是残缺日"的区间会内部自证完整(2026-10-06 实际发生:5 行的日子
+        # 组成一段后,区间内最大值只有 5 ⇒ 门槛退化,缺口被反复误判为已修复)。
+        # 也不能用中位数:有些表**大多数日子本身就是残缺的**(个股资金流向近 180 天里
+        # 中位数只有 57 行,而完整日是 5213 行)。
+        cur.execute(
+            f'SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY n) FROM ('
+            f'  SELECT "{水位列}"::date AS d, count(*) AS n FROM "{数据源}"."{数据集}" '
+            f'  WHERE "{水位列}"::date > (SELECT max("{水位列}"::date) FROM "{数据源}"."{数据集}") - 365 '
+            f'  GROUP BY 1) t',
+        )
+        中位 = cur.fetchone()[0]
 
     应有 = _交易日集合(conn, 起, 止)
     if not 应有 or not 每日:
         return False
-    参照 = max(每日.values())
-    # 阈值取"参照日行数 × 覆盖阈值";参照日太小(如全表只有个位数行)则不设门槛
+    参照 = float(中位 or 0)
+    # 数据集本身就很小(个位数行/日)时不设门槛,避免对宏观月表之类误判
     门槛 = 参照 * 覆盖阈值 if 参照 >= 10 else 0
     return all(每日.get(d, 0) >= 门槛 for d in 应有)
 
