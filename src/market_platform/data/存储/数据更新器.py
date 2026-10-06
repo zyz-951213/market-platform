@@ -1,5 +1,6 @@
 """数据更新器基类 + 公共工具函数"""
 from __future__ import annotations
+import math
 import psycopg
 
 class DataUpdater:
@@ -53,9 +54,27 @@ def _next_id(conn, schema, table):
         return cur.fetchone()[0] + 1
 
 def _to_n(v):
+    """转 float;NaN/±Inf 视为缺失返回 None(否则会把 'NaN' 写进 numeric 列)。
+
+    历史事故:源数据 'NaN'/pandas.nan 经 float() 变成 nan,psycopg 会把它当
+    PostgreSQL 的 numeric 'NaN' 写入,聚合时沿 avg/sum 传播,污染整段结果。
+    """
     if v is None or v == '' or v == '--' or v == '-': return None
-    try: return float(v)
-    except: return None
+    try: f = float(v)
+    except Exception: return None
+    return f if math.isfinite(f) else None
+
+def _pct_to_ratio(v):
+    """百分数 → 小数。
+
+    库内 `日行情.pct_chg`(源 = 个股日行情文件.涨跌幅)统一用**小数**
+    (CSMAR 档案段口径,如 -0.0288)。baostock 的 pctChg 返回的是**百分数**
+    (如 -2.88),直接写入会让同一列混两种量纲 —— 2026-07-27 起 47 个交易日的
+    增量行曾因此放大 100 倍,并顺着等权/市值加权口径污染市场收益计算段。
+    """
+    n = _to_n(v)
+    return None if n is None else n / 100.0
+
 
 def _to_i(v):
     if v is None or v == '' or v == '--': return None
@@ -152,7 +171,13 @@ def _insert(conn, schema, table, col_vals, source="akshare"):
     """
     global _insert_stats
     # 过滤掉值为 None 的字段（不写入 NULL 字段，让它们保持 DB 默认值）
-    filtered = {k: v for k, v in col_vals.items() if v is not None and v != ""}
+    # 非有限浮点(NaN/±Inf)一律按缺失处理:numeric 列能存 'NaN',一旦入库会沿
+    # 聚合(avg/sum)传播,把整段统计变成 NaN。
+    filtered = {
+        k: v
+        for k, v in col_vals.items()
+        if v is not None and v != "" and not (isinstance(v, float) and not math.isfinite(v))
+    }
     if not filtered:
         return False
 

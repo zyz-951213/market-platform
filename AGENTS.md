@@ -42,6 +42,12 @@
 - **路由路径参数名必须是 ASCII**:Starlette 不识别 `{中文:path}`(会退化为字面量路由)。
 - 股票代码统一 6 位;行业权威 = 中信证券行业分类 2.0 修订版,回退链:
   东方财富 → baostock 证监会 → 申万一级。
+- **数值列单位与缺失是硬约束**(2026-10-06 两类真实事故的根因):
+  涨跌幅/收益率一律**小数**(`-0.0288` = -2.88%),源接口给百分数时必须用
+  `数据更新器._pct_to_ratio()` 换算(baostock `pctChg` 就是百分数,曾让 47 个交易日
+  放大 100 倍);**禁止 NaN/±Inf 入库** —— PostgreSQL `numeric` 能存 `'NaN'`,而
+  `avg/sum` 会把它沿整段传播(`IS NULL` 查不出来,必须 `col = 'NaN'::numeric`)。
+  写入侧统一走 `_to_n()` / `_insert()`;改完跑 `market-platform data 数据体检`。
 
 ## 5. 运行态与配置边界
 
@@ -73,4 +79,5 @@ ruff check src/market_platform tests     # 必须零告警
 pytest tests --no-header                 # 必须全绿
 node web/构建.mjs                        # 站点可构建(改动前端/门户时)
 market-platform 健康                      # 三域 search_path 与连通性
+market-platform data 数据体检             # 涨跌幅量纲 / NaN 存量 / 市场收益计算段(改动数据层时)
 ```

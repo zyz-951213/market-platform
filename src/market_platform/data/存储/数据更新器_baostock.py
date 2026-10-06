@@ -1,7 +1,7 @@
 """Baostock 数据更新 — 完整字段覆盖重写（登录失败抛错；日行情支持 akshare 回退）"""
 from datetime import date, timedelta
 from .数据更新器 import (
-    _to_n, _to_i, _insert, _existing_key_set,
+    _to_n, _to_i, _pct_to_ratio, _insert, _existing_key_set,
     baostock_login_or_raise, retry_call, get_watermark,
 )
 
@@ -25,6 +25,7 @@ def update_daily_bars(updater) -> str:
 
     # 水位表/MAX 已到 end 时仍可能有大量标的落后（腾讯回退曾只拉「已到 max 日」子集）
     lagging = 0
+    最早落后日 = None
     with conn.cursor() as cur:
         cur.execute(
             '''
@@ -39,12 +40,61 @@ def update_daily_bars(updater) -> str:
         )
         lagging = int(cur.fetchone()[0] or 0)
 
-    if start > end and lagging == 0:
+        # 覆盖塌陷修正:先看**全表**逐日家数,找出最近一次"家数骤降"的日期。
+        # 旧实现只回补最近 10 天,遇到「某些天只落了部分标的」这类塌陷永远补不上,
+        # 而全局 MAX 仍是最新,水位检查也发现不了(2026-07-27 的 5608→1994 即此类)。
+        cur.execute(
+            '''
+            SELECT min(交易日期) FROM (
+              SELECT "交易日期", count(*) AS n
+              FROM "公共"."个股日行情文件"
+              WHERE "交易日期" > %s
+              GROUP BY 1
+              HAVING count(*) < (SELECT 0.9 * max(n) FROM (
+                  SELECT count(*) AS n FROM "公共"."个股日行情文件"
+                  WHERE "交易日期" > %s GROUP BY "交易日期") x)
+            ) y
+            ''',
+            (end - timedelta(days=400), end - timedelta(days=400)),
+        )
+        行 = cur.fetchone()
+        最早落后日 = 行[0] if 行 else None
+
+    # 「应补到哪天」= 最近一个有股票列表的交易日(set 到假期就会前移),
+    # 不能直接用 end=今天:国庆/春节等长假里 今天 不是交易日,会导致 start > 目标日
+    # 从而让 baostock 对每只股票都报「起始日期大于终止日期」。
+    目标日 = end
+    try:
+        _bs = baostock_login_or_raise()
+        for back in range(0, 10):
+            d = end - timedelta(days=back)
+            rs = _bs.query_all_stock(day=d.strftime("%Y-%m-%d"))
+            有 = False
+            while rs.next():
+                有 = True
+                break
+            if 有:
+                目标日 = d
+                break
+        _bs.logout()
+    except Exception:
+        目标日 = end
+
+    if start > 目标日 and lagging == 0 and 最早落后日 is None:
         conn.close()
         return f"日行情已最新（最新: {latest}）"
-    if start > end and lagging > 0:
-        # 全局 MAX 已最新，但从落后标的各自水位再往前补
-        start = end - timedelta(days=10)
+
+    if start > 目标日 or lagging > 0 or 最早落后日 is not None:
+        # 全局 MAX 已最新,但存在落后标的或覆盖塌陷:从**最早的塌陷/落后日**往前补
+        候选 = [d for d in (最早落后日, 目标日 - timedelta(days=10)) if d is not None]
+        start = min(候选 + [start]) if start <= 目标日 else min(候选)
+        # 上限保护:单次最多回补 240 天,避免误触发全量重拉
+        start = max(start, 目标日 - timedelta(days=240))
+        print(
+            f"[覆盖回补] 落后标的 {lagging} 只,最早塌陷日 {最早落后日},"
+            f"目标日 {目标日},本次回补区间 {start} → {目标日}",
+            flush=True,
+        )
 
     # 优先 baostock；黑名单/登录失败则走腾讯行情回退，连续补到 end
     try:
@@ -113,7 +163,7 @@ def _daily_bars_baostock(conn, start: date, end: date) -> str:
                     "昨收盘": _to_n(r[5]) if len(r) > 5 else None,
                     "成交量(股)": _to_i(r[6]) if len(r) > 6 else None,
                     "成交金额(元)": _to_n(r[7]) if len(r) > 7 else None,
-                    "涨跌幅": _to_n(r[11]) if len(r) > 11 else None,
+                    "涨跌幅": _pct_to_ratio(r[11]) if len(r) > 11 else None,   # baostock pctChg 是百分数
                 }, source="baostock")
                 if ok:
                     updated += 1

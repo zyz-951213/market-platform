@@ -515,3 +515,113 @@ def test_前端概览页含市场分段字典面板():
     脚本 = (前端根() / "模块" / "数据底座" / "源码" / "页面" / "概览.js").read_text(encoding="utf-8")
     assert "market-dict-body" in 页面 and "市场分段字典" in 页面
     assert "市场类型字典" in 脚本 and "loadMarketDict" in 脚本
+
+
+# ── ④ 数值口径护栏(2026-10-06:量纲混用 / NaN 传播 / 权重口径缺失)─────────────
+def test_百分数转小数():
+    """baostock 的 pctChg 是百分数,入库必须换算成小数(库内统一口径)。"""
+    from market_platform.data.存储.数据更新器 import _pct_to_ratio
+
+    assert _pct_to_ratio("-2.88") == pytest.approx(-0.0288)
+    assert _pct_to_ratio(6.83) == pytest.approx(0.0683)
+    assert _pct_to_ratio(None) is None
+    assert _pct_to_ratio("--") is None
+
+
+def test_非有限浮点按缺失处理():
+    """NaN/±Inf 不得入库:numeric 能存 'NaN',聚合会把它整段传播出去。"""
+    from market_platform.data.存储.数据更新器 import _to_n
+
+    assert _to_n("NaN") is None
+    assert _to_n(float("nan")) is None
+    assert _to_n(float("inf")) is None
+    assert _to_n("1.5") == pytest.approx(1.5)
+    assert _to_n("-0.03") == pytest.approx(-0.03)
+
+
+def test_insert_过滤非有限浮点():
+    import inspect
+
+    from market_platform.data.存储.数据更新器 import _insert
+
+    源码 = inspect.getsource(_insert)
+    assert "math.isfinite" in 源码, "写入侧必须拦掉 NaN/Inf(评审: 2026-10-06 事故)"
+
+
+def test_baostock写入用百分数换算():
+    import inspect
+
+    from market_platform.data.存储 import 数据更新器_baostock as 模块
+
+    源码 = inspect.getsource(模块._daily_bars_baostock)
+    assert "_pct_to_ratio" in 源码, "baostock pctChg 是百分数,必须换算后入库"
+    assert "_to_n(r[11])" not in 源码, "回归:曾直接写 _to_n(r[11]) 导致量纲放大 100 倍"
+
+
+def test_深B含201前缀():
+    """CSMAR 深B 市场含 201xxx(如 201872),只认 200xxx 会少数一只。"""
+    from market_platform.data.存储.市场收益构建 import 分段表达式
+
+    assert "'200', '201'" in 分段表达式
+
+
+def test_权重口径逐分段():
+    """B 股用 B 股市值/股本,科创板用 A 股口径(剔除 H 股),其余用原始市值列。"""
+    from market_platform.data.存储.市场收益构建 import 权重列
+
+    片段 = 权重列("y")
+    assert "float_b_mkt_cap" in 片段 and "float_a_mkt_cap" in 片段
+    assert "float_mkt_cap" in 片段
+    assert "IN (2, 8)" in 片段 and "= 32" in 片段
+
+
+def test_昨窗口锚点必须是分界日():
+    """回归:窗口若锚到『止日』,区间前半段取不到前一日权重 → 市值加权整段为 NULL。"""
+    import inspect
+
+    from market_platform.data.存储.市场收益构建 import 构建市场收益
+
+    源码 = inspect.getsource(构建市场收益)
+    assert "(分界日, 止, 止, 分界日, 止, 分界日, 止)" in 源码
+
+
+def test_除权息按日期关联():
+    """回归:红 CTE 只按代码关联会让 今⋈红 行放大,虚增 n_firms/volume/amount。"""
+    import inspect
+
+    from market_platform.data.存储.市场收益构建 import 构建市场收益
+
+    源码 = inspect.getsource(构建市场收益)
+    assert "红.除权日 = j.trade_date" in 源码
+    assert "GROUP BY 1, 2" in 源码
+
+
+def test_市场收益构建覆盖分红与权重口径():
+    import inspect
+
+    from market_platform.data.存储.市场收益构建 import 构建市场收益
+
+    源码 = inspect.getsource(构建市场收益)
+    assert "ret_ew_div" in 源码 and "ret_total_vw_div" in 源码
+    assert "权重口径" in 源码 and "股本结转" in 源码
+
+
+def test_数据体检判据对量纲异常报警():
+    """体检项的阈值方向:量纲放大 100 倍是『偏大』,必须报错,而不是报『偏小』。"""
+    from market_platform.data.存储 import 数据体检 as 模块
+
+    assert 模块.涨跌幅上界 == pytest.approx(0.12)
+    # 模拟判据:0.02 正常、2.4 异常
+    异常 = [v for v in (0.02, 2.4, 0.03, 3.3) if v > 模块.涨跌幅上界]
+    assert 异常 == [2.4, 3.3]
+
+
+def test_数据体检打印只在错误时非零():
+    from market_platform.data.存储.数据体检 import 打印数据体检
+
+    行: list[str] = []
+    assert 打印数据体检({"项": [("提示", "仅供参考")]}, 行.append) == 0
+    行.clear()
+    assert 打印数据体检({"项": [("错误", "必须修")]}, 行.append) == 1
+    行.clear()
+    assert 打印数据体检({"项": []}, 行.append) == 0
