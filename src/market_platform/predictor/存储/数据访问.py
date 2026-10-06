@@ -31,9 +31,27 @@ def _settings() -> DatabaseSettings:
 
 @lru_cache(maxsize=1)
 def _store() -> PostgresStore:
+    """构造存储对象。
+
+    评审 C3:此前无条件 `enabled=True`,把 `config/数据库.yaml → 启用` 开关变成摆设
+    (改 enabled=false 也照样连库)。现在尊重配置:
+      · `启用: true`  —— 正常连库(默认);
+      · `启用: false` —— 存储层标记为不可用,调用方会**明确报错**而不是静默走文件;
+        若确实要在配置关闭时强制连库(例如排障),设置环境变量 `MARKET_FORCE_PG=1`。
+    """
+    import os
+
     s = _settings()
+    强制 = os.environ.get("MARKET_FORCE_PG", "").strip().lower() in {"1", "true", "yes", "on"}
+    启用 = bool(s.enabled) or 强制
+    if not 启用:
+        logger.warning(
+            "配置 启用=false:PostgreSQL 存储不可用(如需强制连库设 MARKET_FORCE_PG=1)"
+        )
+    elif 强制 and not s.enabled:
+        logger.warning("MARKET_FORCE_PG=1:已忽略配置中的 启用=false")
     effective = DatabaseSettings(
-        enabled=True,
+        enabled=启用,
         dsn=s.dsn,
         search_path=s.search_path,
         write_files=s.write_files,

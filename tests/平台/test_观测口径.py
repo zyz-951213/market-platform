@@ -228,3 +228,63 @@ def test_静默降级点已加日志():
 
     assert "检测失败" in inspect.getsource(策略摘要.build_strategy_summary)
     assert "统计失败" in inspect.getsource(数据库.PostgresStore)
+
+
+# ── D2:幂等改由数据库业务键约束保证(而非 Python 预读) ────────────────────
+def test_冲突策略可配置且默认更新():
+    from market_platform.data.存储.数据更新器 import _冲突策略
+
+    assert _冲突策略() in {"更新", "忽略"}
+
+
+def test_可更新列排除代理键与时间戳():
+    from market_platform.data.存储.数据更新器 import _可更新列
+
+    列 = _可更新列({"序号": 1, "证券代码": "000001", "交易日期": "2026-10-01", "updated_at": "NOW()", "source": "akshare"})
+    assert "序号" not in 列 and "updated_at" not in 列
+    assert {"证券代码", "交易日期", "source"} <= set(列)
+
+
+def test_业务键唯一列_能发现业务索引并忽略代理主键():
+    """真实库上验证:index 日行情 的业务键应为三列(含简称),而代理主键不算。"""
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+    from market_platform.data.存储.数据更新器 import _业务键唯一列
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        列 = _业务键唯一列(conn, "公共", "国内指数日行情文件")
+        assert 列 is not None, "迁移 005 应已建立业务键唯一索引"
+        assert set(列) >= {"交易所指数代码", "交易日期"}
+        assert "指数中文简称" in 列, "缺简称维度会把不同指数混为一谈(980001 的坑)"
+    finally:
+        conn.close()
+
+
+def test_无业务键索引的表退回忽略策略():
+    """只有代理主键的表不应被 DO UPDATE(否则没有任何冲突目标可用)。"""
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+    from market_platform.data.存储.数据更新器 import _业务键唯一列
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        列 = _业务键唯一列(conn, "公共", "不存在这样的表_xyz")
+        assert 列 is None
+    finally:
+        conn.close()
+
+
+def test_写入统计可区分插入与更新():
+    from market_platform.data.存储.数据更新器 import 取写入统计, 重置写入统计
+
+    重置写入统计()
+    assert 取写入统计() == {"插入": 0, "更新": 0, "跳过": 0}

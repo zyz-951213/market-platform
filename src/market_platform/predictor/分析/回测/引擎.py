@@ -598,6 +598,29 @@ class BacktestEngine:
         触发: list[str] = []
         if 冷却剩余 > 0:
             return pw, 触发
+
+        # v3 模式(dd_cap):只在**账户回撤期**压进攻权重上限,带滞回(回撤修复后解除),
+        # 不在上涨期兑现 —— v1/v2 的教训是"上涨途中削减进攻"直接吃掉收益。
+        if str(参数.get("mode", "scale")).lower() == "dd_cap":
+            触发阈值 = float(参数.get("dd_threshold", 0.12))
+            解除阈值 = float(参数.get("dd_release", 0.06))
+            上限 = float(参数.get("offense_cap", 0.35))
+            当前回撤 = 进攻净值 / 峰值 - 1.0 if 峰值 > 0 else 0.0
+            在压 = bool((pw.layers or {}).get("_风控压进攻"))
+            进攻权重 = sum(float(pw.weights.get(k, 0.0)) for k in ("csi300", "nasdaq"))
+            if (not 在压 and 当前回撤 <= -abs(触发阈值)) or (在压 and 当前回撤 <= -abs(解除阈值)):
+                if 进攻权重 > 上限 > 0:
+                    缩放 = 上限 / 进攻权重
+                    pw = self._统一缩进攻(pw, 缩放)
+                    pw.layers = dict(pw.layers or {})
+                    pw.layers["_风控压进攻"] = True
+                    self.统一风控触发["回撤压进攻"] = self.统一风控触发.get("回撤压进攻", 0) + 1
+                    触发.append(f"回撤压进攻(账户 {当前回撤:+.2%} → 进攻权重上限 {上限:.0%})")
+            elif 在压 and 当前回撤 > -abs(解除阈值):
+                pw.layers = dict(pw.layers or {})
+                pw.layers["_风控压进攻"] = False
+                触发.append(f"解除压进攻(账户回撤修复至 {当前回撤:+.2%})")
+            return pw, 触发
         涨幅 = 进攻净值 / 入场净值 - 1.0
         回撤 = 进攻净值 / 峰值 - 1.0 if 峰值 > 0 else 0.0
 
@@ -2034,10 +2057,9 @@ class BacktestEngine:
         result.统一风控样例 = unified_risk_notes[:20]  # type: ignore[attr-defined]
         if self.统一风控启用:
             logger.info(
-                "统一账户风控已启用: 触发 止损={} 止盈={} 移动止盈={}",
-                self.统一风控触发.get("止损", 0),
-                self.统一风控触发.get("止盈", 0),
-                self.统一风控触发.get("移动止盈", 0),
+                "统一账户风控已启用({}): 触发 {}",
+                self.统一风控参数.get("mode", "scale"),
+                self.统一风控触发,
             )
         if self.训练失败块数 or self.预测失败bar数:
             logger.warning(

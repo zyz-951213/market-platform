@@ -836,8 +836,12 @@ portfolio:
     # 打开后,用「进攻袖(csi300+nasdaq)已实现净值」的回撤/涨幅驱动缩仓,
     # 释放的权重按比例转入现金流袖(mm/repo)。全部使用已实现数据,严格因果。
     apply_risk_controls:
-      enabled: false            # A/B 实测:开启后收益与回撤都变差(见 docs/tasks/TASK-003.md),
-                                # 故保持关闭;unified 的风险由 group_caps + 滚动夏普 + risk_off 叠加管理
+      enabled: false            # A/B 实测(v1/v2/v3/v4)全部为"收益下降、回撤无改善",详见
+                                # docs/tasks/TASK-003.md;unified 风险由 group_caps + 滚动夏普 + risk_off 管理
+      mode: dd_cap              # scale=按阈值缩进攻(v1/v2,实测更差) | dd_cap=仅回撤期压进攻上限(带滞回)
+      dd_threshold: 0.08        # 账户自峰值回撤 8% → 进入"压进攻"状态(12% 时因历史最大回撤仅 11.67% 而从不触发)
+      dd_release: 0.04          # 回撤修复到 4% 以内 → 解除
+      offense_cap: 0.35         # 压进攻期间进攻组权重上限
       trigger_on: account       # 触发基准:account=账户净值(与最大回撤同口径,推荐) | offense=进攻袖贡献
       cooldown_bars: 10         # 触发后冷却 N 根 bar,避免每日反复触发(v1 的教训:78% 的 bar 都在触发)
       stop_loss: 0.10           # 账户净值自入场回撤 10% → 缩进攻

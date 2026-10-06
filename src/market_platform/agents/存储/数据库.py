@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import pandas as pd
-from market_platform.agents.存储.存储配置 import DatabaseSettings, load_database_settings
+from market_platform.agents.存储.存储配置 import load_database_settings
 
 from market_platform.core.存储 import PostgresConnection as _BaseConnection
+from market_platform.core.存储 import PostgresStoreBase
 logger = logging.getLogger(__name__)
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -167,17 +168,12 @@ def _artifact_type_en(artifact_type: str) -> str:
     return _ARTIFACT_TYPE_FROM_CN.get(key, key)
 
 
-class PostgresStore:
-    def __init__(self, settings: DatabaseSettings | None = None) -> None:
-        self.settings = settings or load_database_settings()
-        self._pg = PostgresConnection(self.settings)
+class PostgresStore(PostgresStoreBase):
+    # 使用域内连接子类(带默认 search_path 与 schema.sql)
+    连接类 = PostgresConnection
+    settings_loader = staticmethod(load_database_settings)
+    _日期为日期对象 = True  # 行为分析窄表口径:date 转成 date 对象
 
-    @property
-    def enabled(self) -> bool:
-        return self._pg.available
-
-    def init_schema(self) -> None:
-        self._pg.init_schema()
 
     def migrate_equity_merge_states(self) -> dict[str, Any]:
         """兼容旧脚本：中文库已无独立 market_states / OHLCV 列，直接回报当前结构。"""
@@ -210,11 +206,6 @@ class PostgresStore:
             stats["had_market_states_table"] = bool(cur.fetchone()[0])
         return stats
 
-    def ping(self) -> bool:
-        return self._pg.ping()
-
-    def _conn(self):
-        return self._pg.connect()
 
     def upsert_symbols(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
@@ -1064,19 +1055,6 @@ class PostgresStore:
         """
         return self._payload_rows_to_df(self._read_sql(sql, (series_name,)))
 
-    def _read_sql(self, sql: str, params: tuple | list | None = None) -> pd.DataFrame:
-        conn = self._conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params or ())
-                cols = [desc[0] for desc in cur.description] if cur.description else []
-                rows = cur.fetchall()
-        except Exception:
-            conn.rollback()
-            raise
-        if not rows:
-            return pd.DataFrame(columns=cols)
-        return pd.DataFrame(rows, columns=cols)
 
     def _executemany(self, sql: str, rows: list[dict[str, Any]]) -> int:
         if not rows:
@@ -1226,19 +1204,3 @@ class PostgresStore:
         """
         return self._executemany_tuple(sql, rows)
 
-    def _payload_rows_to_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return pd.DataFrame()
-        records: list[dict[str, Any]] = []
-        for row in df.itertuples(index=False):
-            payload = getattr(row, "payload", {}) or {}
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            rec = {"date": getattr(row, "date")}
-            if isinstance(payload, dict):
-                rec.update(payload)
-            records.append(rec)
-        out = pd.DataFrame(records)
-        if "date" in out.columns:
-            out["date"] = pd.to_datetime(out["date"]).dt.date
-        return out

@@ -28,6 +28,23 @@ class DataUpdater:
                 conn.close()
 
 
+# ── 写入统计(TASK-003 D2:区分"新增"与"覆盖修正")──
+_insert_stats: dict[str, int] = {"插入": 0, "更新": 0, "跳过": 0}
+
+
+def 重置写入统计() -> dict[str, int]:
+    import copy
+
+    snapshot = copy.deepcopy(_insert_stats)
+    for k in _insert_stats:
+        _insert_stats[k] = 0
+    return snapshot
+
+
+def 取写入统计() -> dict[str, int]:
+    return dict(_insert_stats)
+
+
 # ── 公共工具函数 ──
 
 def _next_id(conn, schema, table):
@@ -58,8 +75,82 @@ def _parse_month(s):
         return s[:7] + "-01"
     return None
 
+def _冲突策略() -> str:
+    """写入冲突策略(TASK-003 D2)。
+
+    历史行为恒为 `DO NOTHING` —— 意味着**数据源端的修正永远不会落地**
+    (同一业务键第二次拉到的更正值被静默丢弃)。
+    现支持两种策略,由 `config/数据库.yaml → 读表.冲突策略` 控制:
+
+      更新(默认) —— `ON CONFLICT DO UPDATE`:冲突时用新值覆盖,源端修正能落地;
+      忽略        —— 旧行为 `DO NOTHING`:冲突即丢弃(用于不愿被覆盖的数据集)。
+    """
+    try:
+        from market_platform.core.配置 import 加载YAML
+        from market_platform.core.路径 import 数据库配置
+
+        raw = 加载YAML(数据库配置()) or {}
+        读表 = raw.get("读表") or {}
+        return str(读表.get("冲突策略", "更新")).strip()
+    except Exception:  # noqa: BLE001 — 配置不可读时按安全默认
+        return "更新"
+
+
+_冲突目标缓存: dict[tuple[str, str], tuple[str, ...] | None] = {}
+
+
+def _业务键唯一列(conn, schema: str, table: str) -> tuple[str, ...] | None:
+    """找出该表**非主键**的唯一索引列(即业务键),作为 ON CONFLICT 目标。
+
+    PostgreSQL 的 `ON CONFLICT DO UPDATE` 必须给出冲突目标(推断列或约束名),
+    因此这里在运行时自动发现:
+      · 优先取"非主键"的唯一索引 —— 那是业务键;
+      · 只有代理主键(序号)而没有业务键唯一索引时返回 None,
+        此时退回 `DO NOTHING`(缺业务键索引本身就是 D2 要补的债)。
+    """
+    键 = (schema, table)
+    if 键 in _冲突目标缓存:
+        return _冲突目标缓存[键]
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT array_agg(a.attname ORDER BY k.ord) AS cols
+                FROM pg_index i
+                JOIN pg_class c ON c.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+                WHERE n.nspname = %s AND c.relname = %s
+                  AND i.indisunique AND i.indisvalid AND NOT i.indisprimary
+                  AND i.indpred IS NULL
+                GROUP BY i.indexrelid
+                ORDER BY count(*) ASC
+                LIMIT 1
+                """,
+                (schema, table),
+            )
+            行 = cur.fetchone()
+        列 = tuple(行[0]) if 行 and 行[0] else None
+    except Exception:  # noqa: BLE001 — 查不到就退回 DO NOTHING
+        列 = None
+    _冲突目标缓存[键] = 列
+    return 列
+
+
+def _可更新列(filters) -> list[str]:
+    """DO UPDATE 时允许被覆盖的列:排除代理键与时间戳列。"""
+    排除 = {"序号", "updated_at", "创建时间", "登记时间"}
+    return [c for c in filters if c not in 排除]
+
+
 def _insert(conn, schema, table, col_vals, source="akshare"):
-    """通用 INSERT ON CONFLICT DO NOTHING，自动序号+source+updated_at"""
+    """通用 INSERT,自动序号+source+updated_at;冲突策略见 `_冲突策略`。
+
+    返回值仍为"是否发生写入"(插入或更新都为 True),但会顺带把
+    (是否插入, 是否更新) 记到 `_insert_stats`,供调用方分别统计。
+    """
+    global _insert_stats
     # 过滤掉值为 None 的字段（不写入 NULL 字段，让它们保持 DB 默认值）
     filtered = {k: v for k, v in col_vals.items() if v is not None and v != ""}
     if not filtered:
@@ -80,15 +171,43 @@ def _insert(conn, schema, table, col_vals, source="akshare"):
 
     cols_str = ",".join([f'"{c.replace("%", "%%")}"' for c in filtered.keys()])
     ph_str = ",".join(val_phs)
-    sql = f'INSERT INTO "{schema}"."{table}" ({cols_str}) VALUES ({ph_str}) ON CONFLICT DO NOTHING'
+
+    策略 = _冲突策略()
+    可更新 = _可更新列(filtered)
+    目标 = _业务键唯一列(conn, schema, table) if 策略 == "更新" else None
+    # 冲突目标必须是被插入列的子集,否则该索引对本次写入无意义
+    if 目标 and not set(目标).issubset(set(filtered)):
+        目标 = None
+    if 目标 and 可更新:
+        目标str = ", ".join(f'"{c}"' for c in 目标)
+        赋值 = ", ".join(f'"{c}"=EXCLUDED."{c}"' for c in 可更新)
+        # 用 xmax=0 判断本次是插入还是更新(PostgreSQL 惯用技巧)
+        sql = (
+            f'INSERT INTO "{schema}"."{table}" ({cols_str}) VALUES ({ph_str}) '
+            f'ON CONFLICT ({目标str}) DO UPDATE SET {赋值} '
+            f'RETURNING (xmax = 0) AS inserted'
+        )
+    else:
+        sql = f'INSERT INTO "{schema}"."{table}" ({cols_str}) VALUES ({ph_str}) ON CONFLICT DO NOTHING'
+    # 用 SAVEPOINT 包住:单条失败只回滚这一条,不炸掉调用方的整个事务
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT _insert_sp")
     try:
         with conn.cursor() as cur:
             cur.execute(sql, db_vals)
-            return cur.rowcount > 0
+            row = cur.fetchone() if cur.description else None
+        with conn.cursor() as cur:
+            cur.execute("RELEASE SAVEPOINT _insert_sp")
+        if row is None:
+            _insert_stats["跳过"] += 1
+            return False
+        插入 = bool(row[0]) if isinstance(row, (tuple, list)) else True
+        _insert_stats["插入" if 插入 else "更新"] += 1
+        return True
     except Exception:
-        # 避免后续 InFailedSqlTransaction（非 autocommit 或语句失败残留）
         try:
-            conn.rollback()
+            with conn.cursor() as cur:
+                cur.execute("ROLLBACK TO SAVEPOINT _insert_sp")
         except Exception:
             pass
         return False

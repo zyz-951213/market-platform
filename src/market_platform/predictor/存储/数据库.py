@@ -8,9 +8,10 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from market_platform.predictor.存储.存储配置 import DatabaseSettings, load_database_settings
+from market_platform.predictor.存储.存储配置 import load_database_settings
 
 from market_platform.core.存储 import PostgresConnection as _BaseConnection
+from market_platform.core.存储 import PostgresStoreBase
 logger = logging.getLogger(__name__)
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -69,33 +70,12 @@ class PostgresConnection(_BaseConnection):
     schema_path = _SCHEMA_PATH
     settings_loader = staticmethod(load_database_settings)
 
-class PostgresStore:
-    def __init__(self, settings: DatabaseSettings | None = None) -> None:
-        self.settings = settings or load_database_settings()
-        self._pg = PostgresConnection(self.settings)
+class PostgresStore(PostgresStoreBase):
+    # 使用域内连接子类(带默认 search_path 与 schema.sql)
+    连接类 = PostgresConnection
+    settings_loader = staticmethod(load_database_settings)
 
-    @property
-    def enabled(self) -> bool:
-        return self._pg.available
 
-    def init_schema(self) -> None:
-        self._pg.init_schema()
-
-    def ping(self) -> bool:
-        return self._pg.ping()
-
-    def _conn(self):
-        return self._pg.connect()
-
-    def _read_sql(self, sql: str, params: tuple | list | None = None) -> pd.DataFrame:
-        conn = self._conn()
-        with conn.cursor() as cur:
-            cur.execute(sql, params or ())
-            cols = [desc[0] for desc in cur.description] if cur.description else []
-            rows = cur.fetchall()
-        if not rows:
-            return pd.DataFrame(columns=cols)
-        return pd.DataFrame(rows, columns=cols)
 
     def _executemany_tuple(self, sql: str, rows: list[tuple]) -> int:
         if not rows:
@@ -109,22 +89,6 @@ class PostgresStore:
         conn.commit()
         return total
 
-    def _payload_rows_to_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return pd.DataFrame()
-        records: list[dict[str, Any]] = []
-        for row in df.itertuples(index=False):
-            payload = getattr(row, "payload", {}) or {}
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            rec = {"date": getattr(row, "date")}
-            if isinstance(payload, dict):
-                rec.update(payload)
-            records.append(rec)
-        out = pd.DataFrame(records)
-        if "date" in out.columns:
-            out["date"] = pd.to_datetime(out["date"])
-        return out
 
     def upsert_index_features(self, index_code: str, df: pd.DataFrame) -> int:
         if df.empty:
