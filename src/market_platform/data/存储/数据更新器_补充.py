@@ -1,4 +1,5 @@
 """补充数据更新 — 完整字段覆盖重写"""
+import os
 from datetime import date
 from .数据更新器 import _to_n, _insert, _existing_set, _existing_key_set, baostock_login_or_raise, retry_call
 from .数据更新器 import _existing_composite_set
@@ -1077,14 +1078,29 @@ def 回填个股资金流向(updater, 起: str, 止: str) -> str:
     新增, 失败, 无数据, 连续失败 = 0, 0, 0, 0
     import time as _time
 
+    熔断阈值 = int(os.environ.get("FFLOW_BREAKER", "20"))
+    冷却秒 = float(os.environ.get("FFLOW_COOLDOWN_SEC", "120"))
+    最大冷却轮次 = int(os.environ.get("FFLOW_MAX_ROUNDS", "60"))
+    节流秒 = float(os.environ.get("FFLOW_SLEEP_SEC", "0.2"))
+    运行上限小时 = float(os.environ.get("FFLOW_MAX_HOURS", "6"))
+    截止时刻 = _time.time() + 运行上限小时 * 3600 if 运行上限小时 > 0 else None
+    冷却轮次 = 0
+
     for 代码 in 代码列表:
         市场 = _交易所前缀(代码)
         if 市场 is None:
             continue
-        if 连续失败 >= 30:
-            # 限流熔断:源开始连续拒绝时立刻停下(否则会空转几千次)
-            return (f"个股资金流向: 源连续失败 {连续失败} 次(疑似限流),已熔断暂停;"
-                    f"本次新增 {新增} 条、剩余 {len(代码列表)} 只待下次续跑")
+        if 连续失败 >= 熔断阈值:
+            # 限流熔断:源连续拒绝时**冷却后再续**(而不是直接退出)——
+            # 该接口约 120 天历史、全市场约 5000 只,一次跑不完是常态,
+            # 冷却续跑能让"跑几小时"变成一次调用即可完成,不必反复人工重试。
+            if 冷却轮次 >= 最大冷却轮次 or (截止时刻 and _time.time() > 截止时刻):
+                return (f"个股资金流向: 源持续限流(连续失败 {连续失败} 次,冷却 {冷却轮次} 轮),"
+                        f"已达本次运行上限;新增 {新增} 条、剩余 {len(代码列表)} 只待下次续跑")
+            冷却轮次 += 1
+            _time.sleep(冷却秒)
+            连续失败 = 0
+            continue
         try:
             df = retry_call(
                 lambda c=代码, m=市场: ak.stock_individual_fund_flow(stock=c, market=m),
@@ -1095,7 +1111,7 @@ def 回填个股资金流向(updater, 起: str, 止: str) -> str:
             失败 += 1
             连续失败 += 1
             continue
-        _time.sleep(0.15)  # 节流:源对高频请求会直接断连
+        _time.sleep(节流秒)  # 节流:源对高频请求会直接断连(可用 FFLOW_SLEEP_SEC 调整)
         if df is None or len(df) == 0:
             无数据 += 1
             continue

@@ -708,3 +708,57 @@ def test_日覆盖完整度参照用p90():
 
     src = inspect.getsource(检查日覆盖完整度)
     assert "p90" in src and "0.9" in src
+
+
+# ── ⑥ 应用层日行情口径(2026-10-06:93% 的成交额被写成成交量)────────────────
+def test_腾讯日线成交量列必须换算为股与元():
+    """回归:akshare 腾讯接口的 `amount` 列实际装的是**成交量(手)**,
+    直接当成交额入库会造成"成交额 == 成交量"(行为分析.日行情 1271 万行)。"""
+    import pandas as pd
+
+    from market_platform.agents.采集.数据源 import _normalize_daily
+
+    df = pd.DataFrame({"date": ["2026-09-23", "2026-09-24"], "open": [10.0, 11.0], "close": [12.0, 13.0],
+                       "high": [12.5, 13.5], "low": [9.9, 10.9], "amount": [300.0, 400.0]})
+    out = _normalize_daily(df, "000001", "tencent")
+    assert list(out["volume"]) == [30000.0, 40000.0], "手 → 股 必须 ×100"
+    assert list(out["amount"]) == [360000.0, 520000.0], "成交额 = 股 × 收盘(元)"
+    assert not (out["amount"] == out["volume"]).any()
+
+
+def test_交易日集合合并两套日历口径():
+    """回归:日历表 `A股` 只覆盖 2026-07-26 以后,`上证/深证A股` 只到 2026-07-25,
+    只取一个会让另一段交易日集合为空。"""
+    import inspect
+
+    from market_platform.data.脚本.扫描行情缺口 import _交易日集合
+
+    src = inspect.getsource(_交易日集合)
+    assert "'A股'" in src and "上证A股" in src and "深证A股" in src
+
+
+def test_日覆盖完整度只在开市日判定():
+    """回归:节假日只有新闻类数据集有行,拿它当残缺日是假警报(2026-06-19 端午节)。"""
+    import inspect
+
+    from market_platform.data.存储.数据体检 import 检查日覆盖完整度
+
+    src = inspect.getsource(检查日覆盖完整度)
+    assert "_交易日集合" in src and "开市" in src
+
+
+def test_应用层日行情口径体检项存在():
+    from market_platform.data.存储 import 数据体检 as 模块
+
+    assert "应用层日行情口径" in 模块.检查项
+    assert callable(模块.检查应用层日行情口径)
+
+
+def test_修复应用日行情以公共层为源():
+    import inspect
+
+    from market_platform.agents.脚本.运维.修复应用日行情 import 修复应用日行情
+
+    src = inspect.getsource(修复应用日行情)
+    assert "公共.日行情" in src and "行为分析.日行情" in src
+    assert "ON CONFLICT" in src, "补缺失日必须幂等"

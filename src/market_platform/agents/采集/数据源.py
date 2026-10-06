@@ -437,10 +437,14 @@ def _normalize_daily(df: pd.DataFrame, symbol: str, source: str) -> pd.DataFrame
             }
         )
     elif source == "tencent":
-        if "volume" not in df.columns:
-            df["volume"] = df["amount"]
-        if "amount" not in df.columns or df["amount"].isna().all():
-            df["amount"] = df["volume"] * df["close"]
+        # ⚠ 腾讯接口(stock_zh_a_hist_tx)返回的列名叫 `amount`,但**装的其实是成交量(手)**,
+        #   且没有独立成交量列;直接把它当成交额入库会造成"成交额 == 成交量"
+        #   (2026-10-06 实测:行为分析.日行情 1271 万行如此,占 93%)。
+        #   这里按真实语义统一换算成"股 + 元"(与 公共.日行情 一致,也与
+        #   `vwap = amount / volume` 的用法一致);成交额由 股 × 收盘 估算(VWAP≈收盘)。
+        手数 = pd.to_numeric(df["volume"] if "volume" in df.columns else df["amount"], errors="coerce")
+        df["volume"] = 手数 * 100.0                                              # 手 → 股
+        df["amount"] = df["volume"] * pd.to_numeric(df["close"], errors="coerce")  # 元
     elif source == "sina":
         pass  # already english columns
 

@@ -148,7 +148,14 @@ def 检查业务键唯一性() -> list[tuple[str, str]]:
                   JOIN pg_class c ON c.oid = i.indrelid
                   JOIN pg_namespace n ON n.oid = c.relnamespace
                  WHERE n.nspname = r."数据源" AND c.relname = r."数据集"
-                   AND i.indisunique AND i.indnatts > 1)
+                   AND i.indisunique
+                   -- 复合主键(证券代码,交易日期)本身就是业务键;只把"单列代理键(序号)"排除
+                   AND (NOT i.indisprimary OR i.indnatts > 1)
+                   -- 只由代理键(序号)构成的唯一索引不算业务键
+                   AND EXISTS (
+                     SELECT 1 FROM unnest(i.indkey) AS k(attnum)
+                       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+                      WHERE a.attname <> '序号'))
             ORDER BY 1
             """
         )
@@ -198,6 +205,16 @@ def 检查日覆盖完整度(覆盖阈值: float = 0.25, 天数: int = 120) -> l
                 continue
             if len(每日) < 3:
                 continue
+            # 只在**A 股开市日**上判定残缺:节假日(如 2026-06-19 端午节)只有新闻类数据集
+            # 有行,拿它当"残缺日"是假警报(2026-10-06 实际出现)。
+            try:
+                from market_platform.data.脚本.扫描行情缺口 import _交易日集合
+
+                开市 = _交易日集合(conn, 每日[0][0], 每日[-1][0])
+                if 开市:
+                    每日 = [(d, n) for d, n in 每日 if d in 开市]
+            except Exception:
+                conn.rollback()
             # 参照用 **p90** 而非最大值:龙虎榜这类"事件驱动"表每日行数天然波动(50–170 只),
             # 拿最大值当参照会误报;也不能用中位数 —— 有些表大多数日子本身就是残缺的
             # (个股资金流向近 180 天中位 57 行 vs 完整日 5213 行)。
@@ -218,12 +235,63 @@ def 检查日覆盖完整度(覆盖阈值: float = 0.25, 天数: int = 120) -> l
     return 问题
 
 
+def 检查应用层日行情口径() -> list[tuple[str, str]]:
+    """`行为分析.日行情` 与 `公共.日行情` 的量额口径是否一致。
+
+    由来(2026-10-06):该表 13.6M 行里 93% 的 `成交额` 等于 `成交量`(腾讯接口把成交量
+    装在 `amount` 列里),成交量单位还混用(手/股),导致成交额相关的行为特征全部失真。
+    判据:两侧都存在的行,成交量/成交额应逐行相等(公共层为源,口径 = 股/元)。
+    """
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+
+    with psycopg.connect(数据库DSN()) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) FILTER (WHERE 成交额 = 成交量) AS 额等于量,
+                   count(*) AS 总行
+            FROM 行为分析.日行情
+            """
+        )
+        额等于量, 总行 = cur.fetchone()
+        cur.execute(
+            """
+            SELECT count(*) FILTER (WHERE a."成交量" IS DISTINCT FROM p.volume
+                                      OR a."成交额" IS DISTINCT FROM p.amount)
+            FROM 行为分析.日行情 a
+            JOIN 公共.日行情 p ON p.stock_code = a.证券代码 AND p.trade_date = a.交易日期
+            """
+        )
+        与源不符 = cur.fetchone()[0]
+
+    问题: list[tuple[str, str]] = []
+    if 额等于量:
+        问题.append(
+            (
+                "错误",
+                f"行为分析.日行情 有 {额等于量}/{总行} 行『成交额 = 成交量』"
+                f"(腾讯接口把成交量装在 amount 列;修复: market-platform agents 修复日行情)",
+            )
+        )
+    elif 与源不符:
+        问题.append(
+            (
+                "警告",
+                f"行为分析.日行情 有 {与源不符} 行的成交量/成交额与 公共.日行情 不一致"
+                f"(修复: market-platform agents 修复日行情)",
+            )
+        )
+    return 问题
+
+
 检查项: dict[str, Callable[[], list[tuple[str, str]]]] = {
     "涨跌幅量纲": 检查涨跌幅量纲,
     "numeric NaN 存量": 检查数值NaN,
     "市场收益计算段": 检查市场收益计算段,
     "业务键唯一性": 检查业务键唯一性,
     "日覆盖完整度": 检查日覆盖完整度,
+    "应用层日行情口径": 检查应用层日行情口径,
 }
 
 
@@ -262,6 +330,7 @@ __all__ = [
     "检查市场收益计算段",
     "检查业务键唯一性",
     "检查日覆盖完整度",
+    "检查应用层日行情口径",
     "涨跌幅下界",
     "涨跌幅上界",
 ]

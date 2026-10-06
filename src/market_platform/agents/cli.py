@@ -127,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("fetch-check", help="Check akshare data source connectivity")
 
+    fix_p = sub.add_parser("修复日行情", help="以 公共.日行情 为源修复 行为分析.日行情 的口径(股/元)与缺失日")
+    fix_p.add_argument("--since", default=None)
+    fix_p.add_argument("--until", default=None)
+    fix_p.add_argument("--dry-run", action="store_true")
+
     notify_p = sub.add_parser("notify", help="Send daily digest via webhook/email")
     notify_p.add_argument("--dry-run", action="store_true", help="Print message only")
     notify_p.add_argument("--batch", action="store_true", help="Send batch digest for all symbols")
@@ -636,6 +641,18 @@ def main() -> None:
     config = AppConfig.from_yaml(args.config)
 
     pipeline = DataPipeline(config)
+
+    if args.command == "修复日行情":
+        from market_platform.agents.脚本.运维.修复应用日行情 import main as 修复主函数
+
+        修复参数 = []
+        if args.since:
+            修复参数 += ["--since", args.since]
+        if args.until:
+            修复参数 += ["--until", args.until]
+        if args.dry_run:
+            修复参数.append("--dry-run")
+        raise SystemExit(修复主函数(修复参数))
 
     if args.command == "fetch":
         paths = pipeline.run_fetch(
