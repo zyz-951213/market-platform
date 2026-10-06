@@ -28,19 +28,22 @@ from market_platform.core.配置 import 数据库DSN
 策略表: dict[str, dict[str, str]] = {
     "龙虎榜": {"级别": "区间", "说明": "东财 stock_lhb_detail_em 支持 start/end,可按缺口区间重拉"},
     "ETF融资融券交易明细表": {"级别": "区间", "说明": "上交所两融明细按日可查,可按缺口区间重拉"},
-    "龙虎榜营业部": {"级别": "快照", "说明": "stock_lhb_jgmx_sina 只有即时快照,历史无法取回"},
-    "ETF基金申购赎回清单": {"级别": "快照", "说明": "fund_etf_spot_em 只有当前快照(ETF 清单无历史接口)"},
-    "个股资金流向": {"级别": "快照", "说明": "同花顺/东财排行均为当日口径;历史需逐股 stock_individual_fund_flow(约 5000 只,代价高)"},
+    # 2026-10-06 复审:此前两个数据集被判"仅即时快照",实际都有历史接口 ⇒ 升级为可回填
+    "龙虎榜营业部": {"级别": "逐股按日", "说明": "stock_lhb_detail_em(按日) + stock_lhb_stock_detail_em(逐股营业部明细)"},
+    "个股资金流向": {"级别": "逐股历史", "说明": "stock_individual_fund_flow 提供约 120 天逐股历史(约 5000 只,耗时长)"},
+    "ETF基金申购赎回清单": {"级别": "快照", "说明": "fund_etf_spot_em 只有当前快照;交易所份额接口不含申赎清单 ⇒ 确属不可回填"},
 }
 
 
-def _待处理缺口(conn, only: str | None) -> list[dict[str, Any]]:
+def _待处理缺口(conn, only: str | None, 重试不可回填: bool = False) -> list[dict[str, Any]]:
+    """待处理缺口;`重试不可回填=True` 时把状态='不可回填' 的也纳入(策略升级后重试用)。"""
+    状态集 = "('待处理', '不可回填')" if 重试不可回填 else "('待处理')"
     with conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, 数据源, 数据集, 起始日, 结束日
+            f"""
+            SELECT id, 数据源, 数据集, 起始日, 结束日, 状态
             FROM 行情增量.缺口登记
-            WHERE 状态 = '待处理' AND (%s::text IS NULL OR 数据集 = %s::text)
+            WHERE 状态 IN {状态集} AND (%s::text IS NULL OR 数据集 = %s::text)
             ORDER BY 数据集, 起始日
             """,
             (only, only),
@@ -49,14 +52,15 @@ def _待处理缺口(conn, only: str | None) -> list[dict[str, Any]]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def 回填缺口(*, dry_run: bool = False, only: str | None = None) -> dict[str, Any]:
+def 回填缺口(*, dry_run: bool = False, only: str | None = None,
+             重试不可回填: bool = False) -> dict[str, Any]:
     """按缺口登记执行定向回填;返回统计与明细。"""
     import psycopg
 
     统计: dict[str, Any] = {"区间回填": [], "不可回填": [], "已修复": 0, "仍待处理": 0}
 
     with psycopg.connect(数据库DSN(), autocommit=True) as conn:
-        缺口列表 = _待处理缺口(conn, only)
+        缺口列表 = _待处理缺口(conn, only, 重试不可回填)
         if not 缺口列表:
             return 统计
 
@@ -64,6 +68,31 @@ def 回填缺口(*, dry_run: bool = False, only: str | None = None) -> dict[str,
         from market_platform.data.存储.数据更新器 import DataUpdater
 
         updater = DataUpdater("金融市场数据", 数据库DSN())
+
+        # 逐股历史型数据集:一次遍历全市场即可覆盖所有缺口段 ⇒ 先合并区间跑一遍,
+        # 避免"每段缺口都遍历 5000 只"(11 段 × 5000 只 ≈ 7 小时,2026-10-06 实测)。
+        逐股数据集 = {k for k, v in 策略表.items() if v["级别"] == "逐股历史"}
+        for 数据集 in sorted({g["数据集"] for g in 缺口列表} & 逐股数据集):
+            属于 = [g for g in 缺口列表 if g["数据集"] == 数据集]
+            起 = min(str(g["起始日"]) for g in 属于)
+            止 = max(str(g["结束日"]) for g in 属于)
+            动作 = f"{数据集} {起}~{止}(合并 {len(属于)} 段)"
+            缺口列表 = [g for g in 缺口列表 if g["数据集"] != 数据集]
+            if dry_run:
+                统计["区间回填"].append(动作 + f"(dry-run;合并了 {len(属于)} 段)")
+                continue
+            消息 = 补充.回填个股资金流向(updater, 起, 止)
+            统计["区间回填"].append(f"{动作} → {消息}")
+            for g in 属于:
+                if _区间已补齐(conn, g["数据源"], 数据集, g["起始日"], g["结束日"]):
+                    统计["已修复"] += 1
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE 行情增量.缺口登记 SET 状态=\'已修复\', 更新时间=now() WHERE id=%s",
+                            (g["id"],),
+                        )
+                else:
+                    统计["仍待处理"] += 1
 
         for 缺口 in 缺口列表:
             数据集 = 缺口["数据集"]
@@ -116,6 +145,10 @@ def 回填缺口(*, dry_run: bool = False, only: str | None = None) -> dict[str,
                     消息 = 补充.update_etf_margin(updater)
                 finally:
                     补充.设ETF两融回填区间(None, None)
+            elif 数据集 == "个股资金流向":
+                消息 = 补充.回填个股资金流向(updater, str(缺口["起始日"]), str(缺口["结束日"]))
+            elif 数据集 == "龙虎榜营业部":
+                消息 = 补充.回填龙虎榜营业部(updater, str(缺口["起始日"]), str(缺口["结束日"]))
             else:
                 统计["不可回填"].append(动作 + "(无实现)")
                 continue
@@ -168,9 +201,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="按 行情增量.缺口登记 定向回填")
     parser.add_argument("--dry-run", action="store_true", help="只列出将执行的动作")
     parser.add_argument("--only", default=None, help="只处理某个数据集")
+    parser.add_argument("--重试不可回填", action="store_true",
+                        help="把此前标为『不可回填』的也纳入(策略升级后重试用)")
     args = parser.parse_args(argv)
 
-    统计 = 回填缺口(dry_run=args.dry_run, only=args.only)
+    统计 = 回填缺口(dry_run=args.dry_run, only=args.only, 重试不可回填=args.重试不可回填)
     print(f"区间回填 {len(统计['区间回填'])} 项;不可回填 {len(统计['不可回填'])} 项;"
           f"已修复 {统计['已修复']} 条;仍待处理 {统计['仍待处理']} 条")
     for 行 in 统计["区间回填"]:

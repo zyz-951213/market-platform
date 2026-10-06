@@ -1015,3 +1015,188 @@ def update_company_info(updater) -> str:
                 existing.add(code)
         conn.close()
         return f"公司文件(代码表回退): 新增 {count} 条（{e}）"
+
+
+# ── 逐股 / 逐股按日 回填(2026-10-06 复核后新增)────────────────────────────
+# 复审结论:此前判为"仅即时快照、不可回填"的三个数据集里,有两个**其实有历史接口** ——
+#   · 个股资金流向:东财 `stock_individual_fund_flow(stock, market)` 提供约 120 天逐股历史;
+#   · 龙虎榜营业部:东财 `stock_lhb_detail_em(start,end)` 给当日上榜股票,
+#     `stock_lhb_stock_detail_em(symbol, date, flag)` 给该股当日的营业部明细(含买卖两侧金额)。
+#   · NFT/ETF 申赎清单确实只有即时快照(`fund_etf_spot_em`),维持"不可回填"。
+# 这两个回填都是"逐标的"调用,请求量大(资金流向约 5000 只),故只在缺口回填里按需触发。
+
+def _股票代码列表(conn) -> list[str]:
+    with conn.cursor() as cur:
+        cur.execute('SELECT "证券代码" FROM "公共"."证券档案" ORDER BY 1')
+        return [str(r[0]).strip() for r in cur.fetchall() if r[0]]
+
+
+def _交易所前缀(代码: str) -> str | None:
+    if 代码[:1] in ("6", "9"):
+        return "sh"
+    if 代码[:1] in ("0", "2", "3"):
+        return "sz"
+    if 代码[:1] in ("4", "8"):
+        return "bj"
+    return None
+
+
+def _区间交易日数(conn, 起: str, 止: str) -> list[str]:
+    """区间内的 A 股交易日(用于判断某标的在该窗口是否已补全)。"""
+    from market_platform.data.脚本.扫描行情缺口 import _交易日集合
+
+    return sorted(d.isoformat() for d in _交易日集合(conn, date.fromisoformat(起), date.fromisoformat(止)))
+
+def 回填个股资金流向(updater, 起: str, 止: str) -> str:
+    """逐股回填 公共.个股资金流向(取接口历史中落在 [起,止] 的行)。"""
+    import akshare as ak
+
+    conn = updater._get_conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            'SELECT DISTINCT "交易日期"::text || \'|\' || "股票代码" '
+            'FROM "公共"."个股资金流向" WHERE "交易日期" BETWEEN %s AND %s',
+            (起, 止),
+        )
+        existing = {str(r[0]) for r in cur.fetchall()}
+    代码列表 = _股票代码列表(conn)
+    # 可续跑:跳过"该窗口内已不再缺日"的标的(源限流中断后重跑不会从头再来)。
+    已覆盖: set[str] = set()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT "股票代码" FROM "公共"."个股资金流向"
+             WHERE "交易日期" BETWEEN %s AND %s
+             GROUP BY 1 HAVING count(DISTINCT "交易日期") >= %s
+            """,
+            (起, 止, len(需求日 := _区间交易日数(conn, 起, 止))),
+        )
+        已覆盖 = {str(r[0]).strip() for r in cur.fetchall()}
+    代码列表 = [c for c in 代码列表 if c not in 已覆盖]
+
+    新增, 失败, 无数据, 连续失败 = 0, 0, 0, 0
+    import time as _time
+
+    for 代码 in 代码列表:
+        市场 = _交易所前缀(代码)
+        if 市场 is None:
+            continue
+        if 连续失败 >= 30:
+            # 限流熔断:源开始连续拒绝时立刻停下(否则会空转几千次)
+            return (f"个股资金流向: 源连续失败 {连续失败} 次(疑似限流),已熔断暂停;"
+                    f"本次新增 {新增} 条、剩余 {len(代码列表)} 只待下次续跑")
+        try:
+            df = retry_call(
+                lambda c=代码, m=市场: ak.stock_individual_fund_flow(stock=c, market=m),
+                retries=1, delay=0.5, what=f"资金流向{代码}",
+            )
+            连续失败 = 0
+        except Exception:
+            失败 += 1
+            连续失败 += 1
+            continue
+        _time.sleep(0.15)  # 节流:源对高频请求会直接断连
+        if df is None or len(df) == 0:
+            无数据 += 1
+            continue
+        for _, row in df.iterrows():
+            日 = str(row.get("日期", ""))[:10]
+            if not 日 or not (起 <= 日 <= 止):
+                continue
+            键 = f"{日}|{代码}"
+            if 键 in existing:
+                continue
+            ok = _insert(conn, "公共", "个股资金流向", {
+                "交易日期": 日, "股票代码": 代码, "交易所": "SH" if 市场 == "sh" else ("SZ" if 市场 == "sz" else "BJ"),
+                "收盘价": _to_n(row.get("收盘价")),
+                "涨跌幅": _to_n(row.get("涨跌幅")),      # 该表口径为百分数(与既有 akshare 行一致)
+                "主力净流入": _to_n(row.get("主力净流入-净额")),
+                "主力净占比": _to_n(row.get("主力净流入-净占比")),
+                "超大单净流入": _to_n(row.get("超大单净流入-净额")),
+                "超大单净占比": _to_n(row.get("超大单净流入-净占比")),
+                "大单净流入": _to_n(row.get("大单净流入-净额")),
+                "大单净占比": _to_n(row.get("大单净流入-净占比")),
+                "中单净流入": _to_n(row.get("中单净流入-净额")),
+                "中单净占比": _to_n(row.get("中单净流入-净占比")),
+                "小单净流入": _to_n(row.get("小单净流入-净额")),
+                "小单净占比": _to_n(row.get("小单净流入-净占比")),
+            }, source="akshare-fflow")
+            if ok:
+                新增 += 1
+                existing.add(键)
+    conn.close()
+    return f"个股资金流向: 逐股 {len(代码列表)} 只, 新增 {新增} 条, 无数据 {无数据} 只, 失败 {失败} 只"
+
+
+def 回填龙虎榜营业部(updater, 起: str, 止: str) -> str:
+    """逐日取上榜股票 → 逐股取营业部明细,回填 公共.龙虎榜营业部。"""
+    import akshare as ak
+
+    from market_platform.data.脚本.扫描行情缺口 import _交易日集合
+
+    conn = updater._get_conn()
+    起日 = date.fromisoformat(起)
+    止日 = date.fromisoformat(止)
+    交易 = sorted(_交易日集合(conn, 起日, 止日))
+    with conn.cursor() as cur:
+        cur.execute(
+            'SELECT DISTINCT "交易日期"::text || \'|\' || "股票代码" || \'|\' || "营业部名称" '
+            'FROM "公共"."龙虎榜营业部" WHERE "交易日期" BETWEEN %s AND %s',
+            (起, 止),
+        )
+        existing = {str(r[0]) for r in cur.fetchall()}
+
+    新增, 请求失败, 日失败 = 0, 0, 0
+    for 日 in 交易:
+        日串 = 日.isoformat()
+        try:
+            df = retry_call(
+                lambda d=日串: ak.stock_lhb_detail_em(start_date=d.replace("-", ""), end_date=d.replace("-", "")),
+                retries=2, delay=1.0, what=f"龙虎榜{日串}",
+            )
+        except Exception:
+            日失败 += 1
+            continue
+        if df is None or len(df) == 0:
+            continue
+        # 同一只股票在详情表里会有多行(每个上榜原因一行),必须先去重再逐股取明细,
+        # 否则同一席位会被重复写入 N 次(2026-10-06 实际发生)。
+        已取 = set()
+        for _, 行 in df.iterrows():
+            代码 = str(行.get("代码", "")).strip().zfill(6)
+            if 代码 in 已取:
+                continue
+            已取.add(代码)
+            上榜原因 = None  # 席位明细自带"类型"列(即上榜原因),按席位行取值更准
+            for 方向 in ("买入",):
+                try:
+                    明细 = ak.stock_lhb_stock_detail_em(symbol=代码, date=日串.replace("-", ""), flag=方向)
+                except Exception:
+                    请求失败 += 1
+                    continue
+                if 明细 is None or len(明细) == 0:
+                    continue
+                for _, 席位 in 明细.iterrows():
+                    名称 = str(席位.get("交易营业部名称") or "").strip()
+                    if not 名称:
+                        continue
+                    键 = f"{日串}|{代码}|{名称}"
+                    if 键 in existing:
+                        continue
+                    买 = _to_n(席位.get("买入金额"))
+                    卖 = _to_n(席位.get("卖出金额"))
+                    净 = _to_n(席位.get("净额"))
+                    ok = _insert(conn, "公共", "龙虎榜营业部", {
+                        "交易日期": 日串, "股票代码": 代码, "交易所": "SH" if 代码[:1] == "6" else "SZ",
+                        "营业部名称": 名称,
+                        "上榜原因": str(席位.get("类型") or 上榜原因 or "")[:64] or None,
+                        "买卖方向": "买入" if (净 or 0) >= 0 else "卖出",
+                        "买入金额": 买, "卖出金额": 卖, "净额": 净,
+                        "收盘价": _to_n(行.get("收盘价")), "涨跌幅": _to_n(行.get("涨跌幅")),
+                        "是否机构席位": "机构专用" in 名称,
+                    }, source="akshare-lhb-seat")
+                    if ok:
+                        新增 += 1
+                        existing.add(键)
+    conn.close()
+    return f"龙虎榜营业部: 交易日 {len(交易)} 天, 新增 {新增} 条, 请求失败 {请求失败} 次, 日失败 {日失败} 天"

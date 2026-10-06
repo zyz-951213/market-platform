@@ -213,7 +213,12 @@ def _insert(conn, schema, table, col_vals, source="akshare"):
             f'RETURNING (xmax = 0) AS inserted'
         )
     else:
-        sql = f'INSERT INTO "{schema}"."{table}" ({cols_str}) VALUES ({ph_str}) ON CONFLICT DO NOTHING'
+        # 无业务键唯一索引 ⇒ 只能 DO NOTHING;必须带 RETURNING 1,否则"确实插入了"与
+        # "被冲突跳过"都返回空行,调用方会把新增记成跳过(2026-10-06 实际发生:
+        # 龙虎榜营业部回填写入了 1582 行却报告新增 0,并因此在上游去重集合里漏登记,
+        # 同一次运行内把同一行重复写入)。
+        sql = (f'INSERT INTO "{schema}"."{table}" ({cols_str}) VALUES ({ph_str}) '
+               f'ON CONFLICT DO NOTHING RETURNING 1')
     # 用 SAVEPOINT 包住:单条失败只回滚这一条,不炸掉调用方的整个事务。
     # 注意:autocommit 连接里没有事务块,SAVEPOINT 会报 NoActiveSqlTransaction ⇒ 需先判断。
     用保存点 = not bool(getattr(conn, "autocommit", False))

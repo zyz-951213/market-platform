@@ -126,10 +126,51 @@ def 检查市场收益计算段(最低覆盖: float = 0.90) -> list[tuple[str, s
     return 问题
 
 
+def 检查业务键唯一性() -> list[tuple[str, str]]:
+    """可调度表是否都有"业务键唯一索引"。
+
+    没有唯一索引时 `_insert` 只能 `ON CONFLICT DO NOTHING` —— 而 DO NOTHING 没有约束可冲突,
+    等于"重复插入不报错":重跑或同批重复取数会把整行再写一遍
+    (2026-10-06 实测:龙虎榜营业部 1810 行完全重复、其回填还因返回值误判而漏登记去重集合)。
+    """
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+
+    with psycopg.connect(数据库DSN()) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r."数据源" || '.' || r."数据集"
+            FROM 行情增量.数据集登记 r
+            WHERE r."可调度"
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = r."数据源" AND c.relname = r."数据集"
+                   AND i.indisunique AND i.indnatts > 1)
+            ORDER BY 1
+            """
+        )
+        无键 = [r[0] for r in cur.fetchall()]
+
+    if not 无键:
+        return []
+    return [
+        (
+            "警告",
+            f"{len(无键)} 张可调度表没有业务键唯一索引(重跑可能重复写入整行): "
+            + ", ".join(无键[:8])
+            + ("…" if len(无键) > 8 else ""),
+        )
+    ]
+
+
 检查项: dict[str, Callable[[], list[tuple[str, str]]]] = {
     "涨跌幅量纲": 检查涨跌幅量纲,
     "numeric NaN 存量": 检查数值NaN,
     "市场收益计算段": 检查市场收益计算段,
+    "业务键唯一性": 检查业务键唯一性,
 }
 
 
@@ -166,6 +207,7 @@ __all__ = [
     "检查涨跌幅量纲",
     "检查数值NaN",
     "检查市场收益计算段",
+    "检查业务键唯一性",
     "涨跌幅下界",
     "涨跌幅上界",
 ]

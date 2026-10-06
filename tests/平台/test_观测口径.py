@@ -460,9 +460,13 @@ def test_缺口回填_策略表覆盖当前缺口数据集():
     # 具备区间回填能力的两个必须存在且为"区间"
     assert 策略表["龙虎榜"]["级别"] == "区间"
     assert 策略表["ETF融资融券交易明细表"]["级别"] == "区间"
-    # 快照型必须写明原因(不能只写"待处理")
-    for 名 in ("个股资金流向", "龙虎榜营业部", "ETF基金申购赎回清单"):
-        assert 策略表[名]["级别"] == "快照"
+    # 2026-10-06 复审:两个数据集发现了历史接口 ⇒ 从"快照"升级为逐股回填;
+    # ETF 申赎清单确认只有即时快照,必须写明原因(不能只写"待处理")
+    assert 策略表["龙虎榜营业部"]["级别"] == "逐股按日"
+    assert 策略表["个股资金流向"]["级别"] == "逐股历史"
+    assert 策略表["ETF基金申购赎回清单"]["级别"] == "快照"
+    # 每个数据集都必须写明处置说明(不能只写"待处理")
+    for 名 in ("龙虎榜", "ETF融资融券交易明细表", "龙虎榜营业部", "个股资金流向", "ETF基金申购赎回清单"):
         assert 策略表[名]["说明"]
 
 
@@ -625,3 +629,42 @@ def test_数据体检打印只在错误时非零():
     assert 打印数据体检({"项": [("错误", "必须修")]}, 行.append) == 1
     行.clear()
     assert 打印数据体检({"项": []}, 行.append) == 0
+
+
+# ── ⑤ 幂等与重复写入(2026-10-06:无业务键唯一索引的表重跑会重复写整行)───────
+def test_insert_do_nothing分支必须带回显():
+    """回归:DO NOTHING 不带 RETURNING 时,『确实插入』与『被跳过』都返回空行,
+    调用方会把新增记成跳过(龙虎榜营业部回填写入 1582 行却报新增 0)。"""
+    import inspect
+
+    from market_platform.data.存储.数据更新器 import _insert
+
+    源码 = inspect.getsource(_insert)
+    assert "ON CONFLICT DO NOTHING RETURNING 1" in 源码
+
+
+def test_座位回填先按股票去重():
+    """回归:详情表同一只股票有多行(每个上榜原因一行),逐行取明细会重复写入 N 次。"""
+    import inspect
+
+    from market_platform.data.存储.数据更新器_补充 import 回填龙虎榜营业部
+
+    源码 = inspect.getsource(回填龙虎榜营业部)
+    assert "已取" in 源码 and "continue" in 源码
+
+
+def test_逐股回填合并区间只遍历一次():
+    """逐股型数据集必须合并区间跑一次(否则 11 段 × 5000 只 ≈ 7 小时)。"""
+    import inspect
+
+    from market_platform.data.存储.缺口回填 import 回填缺口
+
+    源码 = inspect.getsource(回填缺口)
+    assert "逐股数据集" in 源码 and "合并" in 源码
+
+
+def test_数据体检含业务键检查项():
+    from market_platform.data.存储 import 数据体检 as 模块
+
+    assert "业务键唯一性" in 模块.检查项
+    assert callable(模块.检查业务键唯一性)
