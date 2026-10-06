@@ -236,6 +236,15 @@ class BacktestEngine:
         self.partition_provider = provider
         # 评审 R13:命中率来源。causal=只用当根之前已结算结果(默认);global=旧行为(有前视)
         self.partition_overlay_source = str(part_cfg.get("source", "causal")).strip().lower()
+
+        # TASK-003 R12:unified 主路径原先**不执行**任何风控(止损/止盈在 continue 之后)。
+        # 现提供显式开关,默认关闭以保持既有回测口径不变;打开后用"进攻袖已实现回撤/涨幅"驱动。
+        统一风控 = (
+            ((get_config().get("portfolio") or {}).get("unified_sharpe") or {}).get("apply_risk_controls") or {}
+        )
+        self.统一风控启用 = bool(统一风控.get("enabled", False))
+        self.统一风控参数 = dict(统一风控)
+        self.统一风控触发: Dict[str, int] = {"止损": 0, "止盈": 0, "移动止盈": 0}
         self._partition_hit_map: Dict[str, float] = {}
         # 评审 R10/R11:失败丢弃与口径降级的显式记账(供指标与报告披露)
         self.训练失败块数: int = 0
@@ -536,6 +545,80 @@ class BacktestEngine:
             return float(np.clip(small, 0.0, self.neutral_overlay_cap))
 
         return 0.0
+
+    # ── TASK-003 R12:unified 账户风控 ──────────────────────────────────────
+    def _统一缩进攻(self, pw, 缩放: float):
+        """把进攻袖(csi300/nasdaq)按比例缩小,释放的权重按现有比例转入现金流袖(m m/repo)。
+
+        说明:这是一次**风险动作**,会突破 group_caps 的 min(与 risk_off 同类),
+        因此在日志与结果里单独计数,便于事后核对。
+        """
+        from market_platform.predictor.分析.资金.统一夏普配置 import PortfolioWeights
+
+        缩放 = max(0.0, min(1.0, float(缩放)))
+        w = {k: float(v) for k, v in pw.weights.items()}
+        释放 = 0.0
+        for 键 in ("csi300", "nasdaq"):
+            旧值 = w.get(键, 0.0)
+            新值 = 旧值 * 缩放
+            w[键] = 新值
+            释放 += 旧值 - 新值
+        if 释放 > 0:
+            现金 = {k: w.get(k, 0.0) for k in ("mm", "repo")}
+            总额 = sum(现金.values())
+            if 总额 <= 1e-12:
+                w["repo"] = w.get("repo", 0.0) + 释放
+            else:
+                for k, v in 现金.items():
+                    w[k] = v + 释放 * (v / 总额)
+        return PortfolioWeights(
+            weights=w,
+            group_weights=pw.group_weights,
+            regime=pw.regime,
+            regime_label=pw.regime_label,
+            llm_tilt=pw.llm_tilt,
+            risk_off=pw.risk_off,
+            layers=dict(pw.layers or {}),
+        )
+
+    def _统一风控调整(self, pw, *, 进攻净值: float, 入场净值: float, 峰值: float,
+                     冷却剩余: int = 0):
+        """按已实现回撤/涨幅决定是否缩仓;返回 (pw, 触发说明列表)。
+
+        A/B 结论(v1 → v2):
+        - v1 用"进攻袖累计贡献"做基准 + 无冷却 → 移动止盈在 78% 的 bar 上触发,
+          收益从 +121% 掉到 +74%,而最大回撤**毫无改善**(回撤按账户净值衡量)。
+        - v2 默认改为以**账户净值**为基准(与最大回撤口径一致),并加冷却期。
+
+        全部使用**已实现**数据(当根之前),不含未来信息。
+        """
+        if not self.统一风控启用 or 入场净值 <= 0:
+            return pw, []
+        参数 = self.统一风控参数
+        触发: list[str] = []
+        if 冷却剩余 > 0:
+            return pw, 触发
+        涨幅 = 进攻净值 / 入场净值 - 1.0
+        回撤 = 进攻净值 / 峰值 - 1.0 if 峰值 > 0 else 0.0
+
+        止损 = 参数.get("stop_loss", self.stop_loss)
+        if 止损 is not None and 涨幅 <= -abs(float(止损)):
+            pw = self._统一缩进攻(pw, float(参数.get("stop_loss_scale", self.emergency_reduce_scale)))
+            self.统一风控触发["止损"] += 1
+            触发.append(f"止损(进攻袖 {涨幅:+.2%} ≤ -{abs(float(止损)):.0%})")
+
+        止盈阈值 = 参数.get("take_profit_gain")
+        if 止盈阈值 is not None and 涨幅 >= float(止盈阈值):
+            pw = self._统一缩进攻(pw, float(参数.get("take_profit_scale", 0.4)))
+            self.统一风控触发["止盈"] += 1
+            触发.append(f"止盈(进攻袖 {涨幅:+.2%} ≥ {float(止盈阈值):.0%})")
+
+        移动阈值 = 参数.get("trailing_peak_dd")
+        if 移动阈值 is not None and 回撤 <= -abs(float(移动阈值)):
+            pw = self._统一缩进攻(pw, float(参数.get("trailing_scale", 0.45)))
+            self.统一风控触发["移动止盈"] += 1
+            触发.append(f"移动止盈(自峰值 {回撤:+.2%} ≤ -{abs(float(移动阈值)):.0%})")
+        return pw, 触发
 
     def _记入分桶结果(self, max_conf: float, hit: bool) -> None:
         """把已结算的预测结果记入分桶账本(因果:只影响之后的 bar)。"""
@@ -1348,6 +1431,14 @@ class BacktestEngine:
         equity_ratio_u = 1.0
         static_4020 = 1.0  # 40/40/20 静态基准（仅 unified 记）
         equal_six = 1.0
+        # TASK-003 R12:unified 账户风控用的"进攻袖"已实现净值追踪
+        进攻净值 = 1.0
+        进攻入场净值: Optional[float] = None
+        进攻峰值 = 1.0
+        unified_risk_notes: list[str] = []
+        账户入场净值: Optional[float] = None
+        账户峰值 = 1.0
+        风控冷却剩余 = 0
 
         while current_train_end < total_len:
             test_start = current_train_end
@@ -1383,6 +1474,12 @@ class BacktestEngine:
                 if position <= self.trade_epsilon:
                     entry_equity = None
                 peak_equity = max(peak_equity, equity)
+                # TASK-003 R12:账户口径的入场/峰值(与最大回撤同口径,供风控触发)
+                if position > self.trade_epsilon and 账户入场净值 is None:
+                    账户入场净值 = float(equity)
+                if position <= self.trade_epsilon:
+                    账户入场净值 = None
+                账户峰值 = max(账户峰值, float(equity))
 
                 # 周频硬切：仅 week_end 调 LLM；其余日复用上周信号
                 need_predict = is_rebalance_day or not self.weekly_decision
@@ -1463,6 +1560,35 @@ class BacktestEngine:
                         confidence=float(max_conf),
                         trading_dates=trading_dates,
                     )
+                    # TASK-003 R12:unified 主路径原先不执行任何风控;
+                    # 开启 apply_risk_controls 后,用"进攻袖已实现回撤/涨幅"缩仓(严格因果)
+                    if self.统一风控启用:
+                        if position > self.trade_epsilon and 进攻入场净值 is None:
+                            进攻入场净值 = 进攻净值
+                        if position <= self.trade_epsilon:
+                            进攻入场净值 = None
+                        进攻峰值 = max(进攻峰值, 进攻净值)
+                        # 触发基准:account(默认,与最大回撤同口径)或 offense(进攻袖贡献)
+                        if str(self.统一风控参数.get("trigger_on", "account")).lower() == "offense":
+                            当前净值, 当前入场, 当前峰值 = 进攻净值, 进攻入场净值 or 进攻净值, 进攻峰值
+                        else:
+                            当前净值 = float(equity)
+                            当前入场 = float(账户入场净值 or 当前净值)
+                            当前峰值 = float(账户峰值)
+                        pw, 风控触发 = self._统一风控调整(
+                            pw,
+                            进攻净值=当前净值,
+                            入场净值=当前入场,
+                            峰值=当前峰值,
+                            冷却剩余=风控冷却剩余,
+                        )
+                        if 风控触发:
+                            风控冷却剩余 = int(self.统一风控参数.get("cooldown_bars", 10))
+                        else:
+                            风控冷却剩余 = max(0, 风控冷却剩余 - 1)
+                        if 风控触发:
+                            unified_risk_notes.extend(f"{asof.date()} {n}" for n in 风控触发)
+
                     target = float(pw.csi300)
                     new_position = target
                     sleeve_l1 = sum(
@@ -1514,6 +1640,7 @@ class BacktestEngine:
                     prev_sleeve_weights = {k: float(pw.weights.get(k, 0.0)) for k in (
                         "csi300", "nasdaq", "gold", "bond", "mm", "repo"
                     )}
+                    进攻净值 *= 1.0 + float(offense_pnl)
                     strat_contrib += float(offense_pnl) * equity_ratio_u
                     cash_contrib += float(defensive_pnl) * equity_ratio_u
                     equity_ratio_u *= 1.0 + float(total_pnl)
@@ -1901,6 +2028,17 @@ class BacktestEngine:
         result.预测失败bar数 = self.预测失败bar数  # type: ignore[attr-defined]
         result.丢弃bar数 = self.丢弃bar数  # type: ignore[attr-defined]
         result.统一夏普降级原因 = self.统一夏普降级原因  # type: ignore[attr-defined]
+        # TASK-003 R12:unified 风控触发情况(开关关闭时计数为 0)
+        result.统一风控启用 = bool(self.统一风控启用)  # type: ignore[attr-defined]
+        result.统一风控触发 = dict(self.统一风控触发)  # type: ignore[attr-defined]
+        result.统一风控样例 = unified_risk_notes[:20]  # type: ignore[attr-defined]
+        if self.统一风控启用:
+            logger.info(
+                "统一账户风控已启用: 触发 止损={} 止盈={} 移动止盈={}",
+                self.统一风控触发.get("止损", 0),
+                self.统一风控触发.get("止盈", 0),
+                self.统一风控触发.get("移动止盈", 0),
+            )
         if self.训练失败块数 or self.预测失败bar数:
             logger.warning(
                 "⚠️ 本次回测丢弃样本: 训练失败块={}(未计入 {} 根 bar), 预测失败 bar={};"

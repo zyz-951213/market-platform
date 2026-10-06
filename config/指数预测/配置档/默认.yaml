@@ -830,6 +830,23 @@ backtest:
 portfolio:
   allocation_mode: "unified_sharpe"   # legacy | unified_sharpe
   unified_sharpe:
+    # ── unified 主路径的账户风控(TASK-003 R12)──────────────────────────
+    # 背景:此前 unified 分支在 continue 之前就完成结算,stop_loss/take_profit
+    # 等 legacy 风控**完全不执行**(`market-platform 自检` 会列出)。
+    # 打开后,用「进攻袖(csi300+nasdaq)已实现净值」的回撤/涨幅驱动缩仓,
+    # 释放的权重按比例转入现金流袖(mm/repo)。全部使用已实现数据,严格因果。
+    apply_risk_controls:
+      enabled: false            # A/B 实测:开启后收益与回撤都变差(见 docs/tasks/TASK-003.md),
+                                # 故保持关闭;unified 的风险由 group_caps + 滚动夏普 + risk_off 叠加管理
+      trigger_on: account       # 触发基准:account=账户净值(与最大回撤同口径,推荐) | offense=进攻袖贡献
+      cooldown_bars: 10         # 触发后冷却 N 根 bar,避免每日反复触发(v1 的教训:78% 的 bar 都在触发)
+      stop_loss: 0.10           # 账户净值自入场回撤 10% → 缩进攻
+      stop_loss_scale: 0.6      # 缩到 60%
+      take_profit_gain: 0.25    # 账户净值自入场上涨 25% → 兑现一部分
+      take_profit_scale: 0.6    # 缩到 60%
+      trailing_peak_dd: 0.15    # 账户净值自峰值回撤 15% → 移动止盈
+      trailing_scale: 0.6
+
     lookback: 126
     rebalance: "weekly"       # daily | weekly（week_end 调仓）
     # 主权益锚 60/30/10：进攻主导，防守次之，现金流托底

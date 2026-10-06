@@ -43,6 +43,19 @@ def 检查统一夏普失效风控() -> list[str]:
         return []
     策略 = _strategy_cfg()
     问题 = []
+
+    # R12 补充:若已打开 unified 账户风控,则"完全没有风控"这一条不再成立,
+    # 但仍要说明 legacy 的 strategy.stop_loss/take_profit 依旧不生效(用的是另一套参数)。
+    统一风控 = ((配置.get("portfolio", {}) or {}).get("unified_sharpe") or {}).get("apply_risk_controls") or {}
+    if 统一风控.get("enabled"):
+        问题.append(
+            "已启用 unified 账户风控(portfolio.unified_sharpe.apply_risk_controls):"
+            f"止损={统一风控.get('stop_loss')} 止盈={统一风控.get('take_profit_gain')} "
+            f"移动止盈={统一风控.get('trailing_peak_dd')};"
+            "注意 backtest.strategy.stop_loss/take_profit 仍**不**在该路径执行(两套参数,不要混看)"
+        )
+        return 问题
+
     for 键, 说明 in UNIFIED_失效项.items():
         值 = 策略.get(键)
         if 值 in (None, False, 0, 0.0, {}, []):

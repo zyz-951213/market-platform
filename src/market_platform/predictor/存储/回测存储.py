@@ -66,6 +66,8 @@ def strategy_fingerprint() -> str:
     cfg = load_config()
     payload = {
         "strategy": cfg.get("backtest", {}).get("strategy", {}),
+        # unified 组合配置也会改变策略行为,必须进指纹(否则改了也没痕迹)
+        "portfolio": cfg.get("portfolio", {}),
         "cash_management": cfg.get("cash_management", {}),
         "direction_threshold": cfg.get("features", {}).get("label", {}).get("direction_threshold"),
         "prompt_version": cfg.get("model", {}).get("llm", {}).get("prompt", {}).get("version"),
@@ -227,6 +229,9 @@ def save_backtest_result(
         "failed_train_blocks": int(getattr(result, "训练失败块数", 0) or 0),
         "failed_predict_bars": int(getattr(result, "预测失败bar数", 0) or 0),
         "unified_fallback_reason": getattr(result, "统一夏普降级原因", None),
+        "统一风控启用": bool(getattr(result, "统一风控启用", False)),
+        "统一风控触发": getattr(result, "统一风控触发", None),
+        "统一风控样例": getattr(result, "统一风控样例", None),
         "weekly_decision": bool(
             (load_config().get("backtest", {}).get("strategy", {}).get("weekly_decision") or {}).get("enabled", False)
         ),

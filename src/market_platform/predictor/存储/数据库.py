@@ -360,7 +360,7 @@ class PostgresStore:
                 # TASK-003:口径与丢弃样本的披露字段,必须随记录留存(否则只活在日志里)
                 "allocation_mode", "static_4020_return", "equal_six_return",
                 "dropped_bars", "failed_train_blocks", "failed_predict_bars",
-                "unified_fallback_reason",
+                "unified_fallback_reason", "统一风控启用", "统一风控触发",
             )
         }
         conn = self._conn()

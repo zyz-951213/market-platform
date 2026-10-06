@@ -529,3 +529,64 @@ def test_回测记录白名单包含披露字段():
     for 键 in ("dropped_bars", "failed_train_blocks", "failed_predict_bars",
                "unified_fallback_reason", "allocation_mode"):
         assert 键 in 源码, f"回测记录未持久化 {键}"
+
+
+# ── R12:unified 主路径风控(开关驱动,默认关闭) ─────────────────────────────
+def test_unified_风控默认关闭():
+    from market_platform.predictor.分析.回测.引擎 import BacktestEngine
+
+    e = BacktestEngine()
+    assert e.统一风控启用 is False, "默认必须保持既有回测口径不变"
+    assert e.统一风控触发 == {"止损": 0, "止盈": 0, "移动止盈": 0}
+
+
+def test_unified_风控缩进攻并转入现金流():
+    from market_platform.predictor.分析.回测.引擎 import BacktestEngine
+    from market_platform.predictor.分析.资金.统一夏普配置 import PortfolioWeights
+
+    e = BacktestEngine.__new__(BacktestEngine)
+    e.统一风控启用 = True
+    e.统一风控参数 = {"stop_loss": 0.08, "stop_loss_scale": 0.5}
+    e.统一风控触发 = {"止损": 0, "止盈": 0, "移动止盈": 0}
+    e.stop_loss = 0.08
+    e.emergency_reduce_scale = 0.6
+
+    pw = PortfolioWeights(
+        weights={"csi300": 0.5, "nasdaq": 0.1, "gold": 0.2, "bond": 0.1, "mm": 0.05, "repo": 0.05},
+        group_weights={"offense": 0.6, "defense": 0.3, "cashflow": 0.1},
+    )
+    新pw, 触发 = e._统一风控调整(pw, 进攻净值=0.90, 入场净值=1.0, 峰值=1.0)
+    assert 触发 and "止损" in 触发[0]
+    assert e.统一风控触发["止损"] == 1
+    # 进攻袖缩半
+    assert 新pw.weights["csi300"] == pytest.approx(0.25)
+    assert 新pw.weights["nasdaq"] == pytest.approx(0.05)
+    # 权重守恒(释放的给了现金流袖)
+    assert sum(新pw.weights.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_unified_风控未触发时不动仓位():
+    from market_platform.predictor.分析.回测.引擎 import BacktestEngine
+    from market_platform.predictor.分析.资金.统一夏普配置 import PortfolioWeights
+
+    e = BacktestEngine.__new__(BacktestEngine)
+    e.统一风控启用 = True
+    e.统一风控参数 = {"stop_loss": 0.08, "take_profit_gain": 0.10, "trailing_peak_dd": 0.06}
+    e.统一风控触发 = {"止损": 0, "止盈": 0, "移动止盈": 0}
+    e.stop_loss = 0.08
+    e.emergency_reduce_scale = 0.6
+
+    pw = PortfolioWeights(weights={"csi300": 0.5, "nasdaq": 0.1, "gold": 0.2, "bond": 0.1, "mm": 0.05, "repo": 0.05},
+                          group_weights={})
+    新pw, 触发 = e._统一风控调整(pw, 进攻净值=1.03, 入场净值=1.0, 峰值=1.05)
+    assert 触发 == [] and 新pw.weights == pw.weights
+
+
+def test_指纹包含_portfolio_配置():
+    """改 unified 配置必须改变策略指纹,否则历史记录无法区分口径。"""
+    import inspect
+
+    from market_platform.predictor.存储 import 回测存储
+
+    源码 = inspect.getsource(回测存储.strategy_fingerprint)
+    assert '"portfolio"' in 源码
