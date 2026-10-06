@@ -48,7 +48,16 @@ TASKS = [
     ("公共-财报资产负债表", bs_u.update_balance),
     ("公共-财报现金流量表", sup_u.update_cashflow),
     ("公共-预披露日期", ak_u.update_report_dates),
+    # TASK-004:由 公共.日行情 聚合出市场收益增量段(补齐 公共.市场收益 视图的缺口)
+    ("公共-市场收益(计算段)", lambda u: _市场收益(u)),
 ]
+
+
+def _市场收益(_updater) -> str:
+    from market_platform.data.存储.市场收益构建 import 构建市场收益
+
+    统计 = 构建市场收益()
+    return f"市场收益: 写入 {统计['写入行']} 行({统计['起']} → {统计['止']})"
 
 
 def 运行更新(*, 只跑: tuple[str, ...] = (), 跳过水位: bool = False) -> tuple[int, int]:

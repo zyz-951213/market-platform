@@ -362,3 +362,92 @@ def test_推送脚本有预检与确认门闸():
     assert "dry-run) 跳过远端临时目录创建" in 文本
     # 预检必须出现在联网之前
     assert 文本.index("执行前预检") < 文本.index("云端临时目录创建失败")
+
+
+# ── TASK-004:市场类型编码与两段口径 ──────────────────────────────────────
+def test_市场类型字典已登记且编码齐全():
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 编码, 名称, 证券代码前缀 FROM 公共.市场类型字典 ORDER BY 编码")
+            行 = dict((r[0], r[1]) for r in cur.fetchall())
+            assert set(行) == {1, 2, 4, 8, 16, 32, 64}, 行
+            assert "创业板" in 行[16] and "科创板" in 行[32] and "北交所" in 行[64]
+    finally:
+        conn.close()
+
+
+def test_市场收益视图已被增量段补满():
+    """TASK-004 的核心目标:被消费的 公共.市场收益 不再停在档案分界日。"""
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN, 日行情档案分界日
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT max(trade_date) FROM 公共.市场收益')
+            视图最后日 = cur.fetchone()[0]
+            cur.execute('SELECT max(trade_date) FROM 公共.日行情')
+            行情最后日 = cur.fetchone()[0]
+            assert 视图最后日 is not None and 行情最后日 is not None
+            # 视图应跟到 日行情 的最后一个交易日(允许 1 天差,防止跨日边界抖动)
+            assert (行情最后日 - 视图最后日).days <= 1, (视图最后日, 行情最后日)
+            assert str(视图最后日) > 日行情档案分界日(), "视图仍停在档案段"
+    finally:
+        conn.close()
+
+
+def test_市场收益构建_口径与档案段一致():
+    """决定"能否补齐"的关键证据:同一交易日上,自算口径与档案段的家数/成交量/收益对齐。"""
+    from market_platform.data.存储.市场收益构建 import 一致性校验
+
+    try:
+        结果 = 一致性校验(样例日="2026-05-20")
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"数据库不可用: {e}")
+    assert 结果["分段"], "样例日应能取到档案段"
+    家数一致 = [s for s in 结果["分段"] if s["档案家数"] == s["计算家数"]]
+    assert len(家数一致) >= 5, 结果
+    收益差 = [abs(s["等权差bp"]) for s in 结果["分段"] if s["等权差bp"] is not None]
+    assert 收益差 and max(收益差) < 10, f"等权收益差过大(bp): {收益差}"
+
+
+def test_市场收益构建幂等():
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+    from market_platform.data.存储.市场收益构建 import 构建市场收益
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM 公共.市场收益文件")
+            前 = cur.fetchone()[0]
+    finally:
+        conn.close()
+
+    统计 = 构建市场收益()
+    assert 统计["写入行"] == 0, f"重复构建不应新增行: {统计}"
+
+    conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM 公共.市场收益文件")
+            后 = cur.fetchone()[0]
+        assert 后 == 前
+    finally:
+        conn.close()
