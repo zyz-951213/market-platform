@@ -124,7 +124,10 @@ def update_latent_bars(updater) -> str:
     from factor_latent.脚本.增量补行情 import main
 
     # 默认同步公共骨架；限制 akshare 补洞数量，避免作业过久
-    main(["--since", "2026-05-20", "--fill-gaps", "--limit", "60", "--sleep", "0.2"])
+    from market_platform.core.配置 import 日行情档案分界日
+
+    # 分界日来自 config/数据库.yaml(评审 D7:此前硬编码)
+    main(["--since", 日行情档案分界日(), "--fill-gaps", "--limit", "60", "--sleep", "0.2"])
     note = "factor-latent 增量补行情"
     _refresh("隐因子", "行情补丁", "交易日期", note)
     _refresh("隐因子", "因子取值", "交易日期", note)

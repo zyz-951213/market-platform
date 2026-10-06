@@ -5,6 +5,7 @@
 #   --days N    增量窗口天数(默认 10,覆盖周末+容错)
 #   --only xxx  只推指定库(market_agents|market_predictor|金融市场数据)
 #   --dry-run   只打印要执行的命令,不真正传输
+#   --yes       确认执行(远端含 TRUNCATE 时必须显式给出,见下方预检)
 # 原理: 大表按 date 键导出窗口内数据 → scp 上传 → 云端 DELETE 窗口内 + COPY 导入(幂等)
 #        小表/配置表全量 TRUNCATE + COPY
 # ============================================================
@@ -15,6 +16,7 @@ SSH_OPTS="-o ConnectTimeout=15 -o StrictHostKeyChecking=no"
 WINDOW_DAYS=10
 ONLY=""
 DRY_RUN=0
+CONFIRMED=0
 TMPDIR_LOCAL="/tmp/推送增量"
 TMPDIR_REMOTE="/tmp/推送增量"
 
@@ -23,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --days) WINDOW_DAYS="$2"; shift 2 ;;
     --only) ONLY="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --yes) CONFIRMED=1; shift ;;
     *) echo "未知参数: $1"; exit 1 ;;
   esac
 done
@@ -31,9 +34,6 @@ if [[ -z "${SSHPASS:-}" ]]; then
   echo "需要 SSHPASS 环境变量(云端 root 密码)" >&2
   exit 1
 fi
-
-mkdir -p "$TMPDIR_LOCAL"
-sshpass -e ssh $SSH_OPTS "$SERVER" "mkdir -p $TMPDIR_REMOTE && chown postgres:postgres $TMPDIR_REMOTE" || { echo "云端临时目录创建失败" >&2; exit 1; }
 
 # ---------- 表清单: 库名|schema|表名|增量键(空=全量)|upsert主键(父表用, 避免TRUNCATE炸外键) ----------
 # 三层结构后原始仓均在「公共」；行为分析原 JSON 标的时序已拆为参与者活跃度+分钟日特征
@@ -102,6 +102,45 @@ TABLES=(
   "金融市场数据|行情增量|数据集登记||数据源,数据集"
   "金融市场数据|行情增量|同步水位||数据源,数据集"
 )
+
+# ---------- 执行前预检(TASK-003 D8)----------
+# 远端镜像库上的破坏性动作必须先看得见:TRUNCATE(小表/配置表全量)会清空整表,
+# DELETE 窗口只清增量窗。含 TRUNCATE 时要求显式 --yes,避免"以为只是推送增量"。
+TRUNCATE_TABLES=(); DELETE_TABLES=(); UPSERT_TABLES=()
+for entry in "${TABLES[@]}"; do
+  IFS='|' read -r _db _schema _tbl _key _upsert <<< "$entry"
+  if [[ -n "$ONLY" && "$_db" != "$ONLY" ]]; then continue; fi
+  if [[ -n "$_key" ]]; then DELETE_TABLES+=("$_schema.$_tbl")
+  elif [[ -n "$_upsert" ]]; then UPSERT_TABLES+=("$_schema.$_tbl")
+  else TRUNCATE_TABLES+=("$_schema.$_tbl"); fi
+done
+
+  echo "════════ 执行前预检(远端镜像库)════════"
+  echo "库: $SERVER"
+  echo "窗口: 最近 ${WINDOW_DAYS} 天"
+  echo "· TRUNCATE(整表清空): ${#TRUNCATE_TABLES[@]} 张"
+  printf '    %s\n' "${TRUNCATE_TABLES[@]:-无}"
+  echo "· DELETE 窗口      : ${#DELETE_TABLES[@]} 张"
+  echo "· 全量 upsert      : ${#UPSERT_TABLES[@]} 张"
+  echo "说明:本地生产库不做任何 DELETE/TRUNCATE;上述动作只发生在云端镜像库。"
+  if [[ $DRY_RUN -eq 0 && ${#TRUNCATE_TABLES[@]} -gt 0 && $CONFIRMED -eq 0 ]]; then
+    echo "" >&2
+    echo "拒绝执行:本次包含 ${#TRUNCATE_TABLES[@]} 张表的远端 TRUNCATE。" >&2
+    echo "请先 --dry-run 预览,确认后用 --yes 执行。" >&2
+    exit 3
+  fi
+  echo "═══════════════════════════════════════"
+
+
+
+mkdir -p "$TMPDIR_LOCAL"
+if [[ $DRY_RUN -eq 1 ]]; then
+  # dry-run 必须完全离线可预览(TASK-003 D8):此前仍会 SSH 建远端临时目录
+  echo "(dry-run) 跳过远端临时目录创建"
+else
+  sshpass -e ssh $SSH_OPTS "$SERVER" "mkdir -p $TMPDIR_REMOTE && chown postgres:postgres $TMPDIR_REMOTE" || { echo "云端临时目录创建失败" >&2; exit 1; }
+fi
+
 
 ok=0; fail=0; skipped=0
 FAILED_TABLES=()

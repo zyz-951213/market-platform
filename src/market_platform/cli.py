@@ -16,7 +16,7 @@ import sys
 用法 = """用法: market-platform <域> [参数]
 
   web                     统一站点与三域 API(门户服务,默认 :18800)
-  data    <命令>          数据底座:更新金融市场数据 / 刷新全库水位 / 补拉落后表 / 启动Web
+  data    <命令>          数据底座:更新金融市场数据 / 刷新全库水位 / 补拉落后表 / 扫描行情缺口 / 启动Web
   agents  <命令>          行为分析:fetch / features / nmf / classify / backtest / web …
   predictor <命令>        指数预测:web / update / paper / pipeline …
   健康                     三域库配置、search_path 与连通性一览
@@ -38,6 +38,8 @@ import sys
     "watermark": "刷新全库水位",
     "补拉落后表": "补拉落后表",
     "补拉": "补拉落后表",
+    "扫描行情缺口": "扫描行情缺口",
+    "缺口": "扫描行情缺口",
     "启动Web": "启动Web",
     "web": "启动Web",
 }
@@ -48,7 +50,7 @@ def _数据底座(argv: list[str]) -> int:
 
     if not argv or argv[0] in {"-h", "--help"}:
         print("数据底座命令:")
-        for 名 in ("更新金融市场数据", "刷新全库水位", "补拉落后表", "启动Web"):
+        for 名 in ("更新金融市场数据", "刷新全库水位", "补拉落后表", "扫描行情缺口", "启动Web"):
             print(f"  {名}")
         return 0
 

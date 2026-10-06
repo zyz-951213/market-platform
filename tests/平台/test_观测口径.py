@@ -288,3 +288,77 @@ def test_写入统计可区分插入与更新():
 
     重置写入统计()
     assert 取写入统计() == {"插入": 0, "更新": 0, "跳过": 0}
+
+
+# ── D4:缺口扫描链路 ──────────────────────────────────────────────────────
+def test_缺口扫描_责任方别名映射():
+    from market_platform.data.脚本.扫描行情缺口 import 责任方别名
+
+    assert 责任方别名["数据底座"] == "database"   # 登记表沿用旧英文代号
+    assert 责任方别名.get("全部") is None
+    assert 责任方别名["行为分析"] == "行为分析"
+
+
+def test_缺口扫描_只针对按交易日的序列():
+    """月频/季频数据集不该被当交易日逐日核对(否则全是假缺口)。"""
+    import inspect
+
+    from market_platform.data.脚本 import 扫描行情缺口 as 模块
+
+    源码 = inspect.getsource(模块._登记数据集)
+    assert "期望锚点" in 源码 and "交易日" in 源码
+
+
+def test_缺口登记有业务键唯一索引():
+    """没有业务键时 ON CONFLICT 无法去重,重复扫描会堆行(迁移 009)。"""
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+
+    try:
+        conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
+    except Exception:
+        pytest.skip("数据库不可用")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT count(*) FROM pg_indexes
+                WHERE schemaname='行情增量' AND tablename='缺口登记'
+                  AND indexname='缺口登记_业务键_uidx'
+                """
+            )
+            assert cur.fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+# ── D7:档案分界日来自配置 ────────────────────────────────────────────────
+def test_档案分界日可配置():
+    from market_platform.core.配置 import 日行情档案分界日
+
+    值 = 日行情档案分界日()
+    assert isinstance(值, str) and len(值) == 10 and 值.startswith("20")
+
+
+def test_运行时代码不再硬编码分界日():
+    import inspect
+
+    from market_platform.data.存储 import 数据更新器_项目 as 模块
+
+    源码 = inspect.getsource(模块.update_latent_bars)
+    assert "日行情档案分界日" in 源码 and "2026-05-20" not in 源码
+
+
+# ── D8:镜像推送的爆炸半径预检 ────────────────────────────────────────────
+def test_推送脚本有预检与确认门闸():
+    from market_platform.core.路径 import 仓库根
+
+    文本 = (仓库根() / "deploy" / "数据底座" / "推送增量.sh").read_text(encoding="utf-8")
+    assert "执行前预检" in 文本
+    assert "--yes" in 文本 and "CONFIRMED" in 文本
+    assert "拒绝执行" in 文本
+    # dry-run 必须完全离线(不建远端目录)
+    assert "dry-run) 跳过远端临时目录创建" in 文本
+    # 预检必须出现在联网之前
+    assert 文本.index("执行前预检") < 文本.index("云端临时目录创建失败")

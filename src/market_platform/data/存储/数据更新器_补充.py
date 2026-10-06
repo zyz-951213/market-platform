@@ -1,6 +1,7 @@
 """补充数据更新 — 完整字段覆盖重写"""
 from datetime import date
 from .数据更新器 import _to_n, _insert, _existing_set, _existing_key_set, baostock_login_or_raise, retry_call
+from .数据更新器 import _existing_composite_set
 
 
 def _parse_cn_money(v):
@@ -742,9 +743,19 @@ def update_index_info(updater) -> str:
     return f"指数基本信息文件: 新增 {count} 条"
 
 def update_market_daily(updater) -> str:
+    """按指数写入日市场回报率增量。
+
+    **键修正(TASK-003 D2b)**:历史实现有三个缺陷:
+      1. 三个指数(上证综指/深证成指/创业板指)的行**全部标成 市场类型='A股'**,
+         导致同一天出现多行同名记录;
+      2. 幂等检查按 `交易日期` **单键**,同一天第二个指数必然重复插入;
+      3. 取得 `existing` 后**不更新集合**,循环内进一步放大了重复。
+    现改为:市场类型 = 指数中文简称;幂等键 = (交易日期, 市场类型) 且随插入同步更新。
+    """
     import akshare as ak
     conn = updater._get_conn()
-    existing = _existing_key_set(conn, "公共", "日市场回报率文件", "交易日期")
+    existing = _existing_composite_set(conn, "公共", "日市场回报率文件", ["交易日期", "市场类型"])
+    # 注意:该 helper 返回的是 "日期|市场类型" 形式的字符串集合
     indices = [("sh000001", "上证综指"), ("sz399001", "深证成指"), ("sz399006", "创业板指")]
     count = 0
     for symbol, name in indices:
@@ -752,17 +763,18 @@ def update_market_daily(updater) -> str:
             df = ak.stock_zh_index_daily(symbol=symbol)
             for _, row in df.iterrows():
                 day = str(row["date"])[:10]
-                if day in existing:
+                if f"{day}|{name}" in existing:
                     continue
                 close = _to_n(row.get("close"))
                 open_p = _to_n(row.get("open"))
                 volume = _to_n(row.get("volume"))
                 ret = round((close - open_p) / open_p * 100, 4) if (close and open_p and open_p > 0) else None
                 ok = _insert(conn, "公共", "日市场回报率文件", {
-                    "交易日期": day, "市场类型": "A股",
+                    "交易日期": day, "市场类型": name,      # 按指数区分,不再一律 'A股'
                     "日市场交易总股数": volume,
                     "考虑现金红利再投资的日市场回报率(等权平均": ret,
                 })
+                existing.add(f"{day}|{name}")  # 同步更新,避免同日重复插入
                 if ok:
                     count += 1
         except Exception:

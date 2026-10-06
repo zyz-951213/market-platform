@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from market_platform.core.配置 import 数据库DSN
+from market_platform.core.配置 import 数据库DSN, 日行情档案分界日
 from market_platform.core.路径 import schema根
 
 import argparse
@@ -65,7 +65,7 @@ OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "更新策略": "增量",
         "水位列": "交易日期",
         "更新入口": "数据更新器_baostock.update_daily_bars",
-        "备注": "仅保留>2026-05-20；档案在微盘.日行情",
+        "备注": f"仅保留>{日行情档案分界日()}；档案在微盘.日行情",
     },
     ("公共", "日行情"): {
         "对象类型": "逻辑接口",
@@ -80,7 +80,7 @@ OVERRIDES: dict[tuple[str, str], dict[str, str]] = {
         "更新策略": "冻结",
         "水位列": "trade_date",
         "更新入口": "import_csmar --force-archive-daily",
-        "备注": "CSMAR档案 ≤2026-05-20",
+        "备注": f"CSMAR档案 ≤{日行情档案分界日()}",
     },
     ("微盘股研究", "日回报"): {
         "责任方": "微盘股研究",
