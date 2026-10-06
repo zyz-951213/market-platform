@@ -168,8 +168,13 @@ def 回填缺口(*, dry_run: bool = False, only: str | None = None,
     return 统计
 
 
-def _区间已补齐(conn, 数据源: str, 数据集: str, 起, 止) -> bool:
-    """区间内的应有交易日是否都已有数据。"""
+def _区间已补齐(conn, 数据源: str, 数据集: str, 起, 止, 覆盖阈值: float = 0.5) -> bool:
+    """区间内的应有交易日是否都**有足量**数据。
+
+    注意"当天有没有行"是不够的:个股资金流向的缺口日里有几天只有 5 行
+    (旧即时口径写入的残留),按"存在即补齐"会把这些残缺日误判为已修复
+    (2026-10-06 实际发生)。这里改为与区间内**最大日行数**比较,低于阈值即视为未补齐。
+    """
     from market_platform.data.脚本.扫描行情缺口 import _交易日集合
 
     with conn.cursor() as cur:
@@ -185,14 +190,19 @@ def _区间已补齐(conn, 数据源: str, 数据集: str, 起, 止) -> bool:
             return False
         水位列 = 行[0]
         cur.execute(
-            f'SELECT DISTINCT "{水位列}"::date FROM "{数据源}"."{数据集}" '
-            f'WHERE "{水位列}"::date BETWEEN %s AND %s',
+            f'SELECT "{水位列}"::date, count(*) FROM "{数据源}"."{数据集}" '
+            f'WHERE "{水位列}"::date BETWEEN %s AND %s GROUP BY 1',
             (起, 止),
         )
-        实有 = {r[0] for r in cur.fetchall() if r[0] is not None}
+        每日 = {r[0]: int(r[1]) for r in cur.fetchall() if r[0] is not None}
 
     应有 = _交易日集合(conn, 起, 止)
-    return bool(应有) and 应有 <= 实有
+    if not 应有 or not 每日:
+        return False
+    参照 = max(每日.values())
+    # 阈值取"参照日行数 × 覆盖阈值";参照日太小(如全表只有个位数行)则不设门槛
+    门槛 = 参照 * 覆盖阈值 if 参照 >= 10 else 0
+    return all(每日.get(d, 0) >= 门槛 for d in 应有)
 
 
 def main(argv: list[str] | None = None) -> int:

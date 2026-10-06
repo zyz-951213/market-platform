@@ -166,11 +166,63 @@ def 检查业务键唯一性() -> list[tuple[str, str]]:
     ]
 
 
+def 检查日覆盖完整度(覆盖阈值: float = 0.25, 天数: int = 120) -> list[tuple[str, str]]:
+    """可调度数据集的"每日行数"是否塌陷(残缺日)。
+
+    由来:个股资金流向的缺口日里只有 5 行(参照 5200 行),而"当天有行"的判据
+    会让缺口被误判为已补齐(2026-10-06 实际发生)。
+    """
+    import psycopg
+
+    from market_platform.core.配置 import 数据库DSN
+
+    问题: list[tuple[str, str]] = []
+    with psycopg.connect(数据库DSN()) as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT "数据源", "数据集", "水位列" FROM 行情增量.数据集登记
+                WHERE "可调度" AND "水位列" IS NOT NULL ORDER BY 1, 2"""
+        )
+        登记 = cur.fetchall()
+
+        for 数据源, 数据集, 水位列 in 登记:
+            try:
+                cur.execute(
+                    f'SELECT "{水位列}"::date AS d, count(*) AS n FROM "{数据源}"."{数据集}" '
+                    f'WHERE "{水位列}"::date > (SELECT max("{水位列}"::date) FROM "{数据源}"."{数据集}") - %s::int '
+                    f'GROUP BY 1 ORDER BY 1',
+                    (天数,),
+                )
+                每日 = [(r[0], int(r[1])) for r in cur.fetchall()]
+            except Exception:
+                conn.rollback()
+                continue
+            if len(每日) < 3:
+                continue
+            # 用**中位数**而非最大值当参照:龙虎榜这类"事件驱动"表每日行数天然波动
+            # (50–170 只),拿最大值当参照会把正常波动误报成残缺日。
+            有序 = sorted(n for _, n in 每日)
+            参照 = 有序[len(有序) // 2]
+            if 参照 < 10:
+                continue
+            残缺 = [(d, n) for d, n in 每日 if n < 参照 * 覆盖阈值]
+            if 残缺:
+                样例 = ", ".join(f"{d}({n})" for d, n in 残缺[:3])
+                问题.append(
+                    (
+                        "警告",
+                        f"{数据源}.{数据集}: 近 {天数} 天里有 {len(残缺)} 个残缺日"
+                        f"(< 参照 {参照} 行的 {覆盖阈值:.0%}): {样例}",
+                    )
+                )
+    return 问题
+
+
 检查项: dict[str, Callable[[], list[tuple[str, str]]]] = {
     "涨跌幅量纲": 检查涨跌幅量纲,
     "numeric NaN 存量": 检查数值NaN,
     "市场收益计算段": 检查市场收益计算段,
     "业务键唯一性": 检查业务键唯一性,
+    "日覆盖完整度": 检查日覆盖完整度,
 }
 
 
@@ -208,6 +260,7 @@ __all__ = [
     "检查数值NaN",
     "检查市场收益计算段",
     "检查业务键唯一性",
+    "检查日覆盖完整度",
     "涨跌幅下界",
     "涨跌幅上界",
 ]

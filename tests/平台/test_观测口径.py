@@ -470,11 +470,13 @@ def test_缺口回填_策略表覆盖当前缺口数据集():
         assert 策略表[名]["说明"]
 
 
-def test_缺口登记不再有空转的待处理():
-    """回填后:待处理应为 0(要么已修复,要么明确标注不可回填)。"""
+def test_缺口登记没有无策略的待处理():
+    """待处理必须都是**有回填路径**的待办(2026-10-06 起允许存在,如源限流待续跑),
+    但不能出现策略表里没有定义、或策略是"快照"却仍挂在待处理的行 —— 那是假待办。"""
     import psycopg
 
     from market_platform.core.配置 import 数据库DSN
+    from market_platform.data.存储.缺口回填 import 策略表
 
     try:
         conn = psycopg.connect(数据库DSN(), connect_timeout=5, autocommit=True)
@@ -484,8 +486,14 @@ def test_缺口登记不再有空转的待处理():
         with conn.cursor() as cur:
             cur.execute("SELECT 状态, count(*) FROM 行情增量.缺口登记 GROUP BY 1")
             分布 = dict(cur.fetchall())
-        assert 分布.get("待处理", 0) == 0, 分布
+            cur.execute("SELECT DISTINCT 数据集 FROM 行情增量.缺口登记 WHERE 状态 = '待处理'")
+            待处理集 = {r[0] for r in cur.fetchall()}
+        assert set(分布) <= {"待处理", "已修复", "不可回填", "已关闭"}, 分布
         assert 分布.get("已修复", 0) + 分布.get("不可回填", 0) > 0, 分布
+        for 数据集 in 待处理集:
+            策略 = 策略表.get(数据集)
+            assert 策略 is not None, f"{数据集} 挂在待处理但策略表未定义"
+            assert 策略["级别"] != "快照", f"{数据集} 是快照型却仍是待处理(应标不可回填)"
     finally:
         conn.close()
 
@@ -668,3 +676,24 @@ def test_数据体检含业务键检查项():
 
     assert "业务键唯一性" in 模块.检查项
     assert callable(模块.检查业务键唯一性)
+
+
+def test_缺口补齐判据必须看覆盖度():
+    """回归:只看"当天有没有行"会把残缺日误判为已补齐(个股资金流向每日仅 5 行)。"""
+    import inspect
+
+    from market_platform.data.存储.缺口回填 import _区间已补齐
+
+    src = inspect.getsource(_区间已补齐)
+    assert "覆盖阈值" in src and "参照" in src
+    assert "GROUP BY 1" in src, "必须按日统计行数,而不是只判断日期是否存在"
+
+
+def test_日覆盖完整度用中位数参照():
+    """事件驱动型表(龙虎榜)每日行数天然波动,用最大值当参照会误报。"""
+    import inspect
+
+    from market_platform.data.存储.数据体检 import 检查日覆盖完整度
+
+    src = inspect.getsource(检查日覆盖完整度)
+    assert "中位数" in src and "有序[len(有序) // 2]" in src
