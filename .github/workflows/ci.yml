@@ -24,7 +24,7 @@ jobs:
           # 契约/口径/研究可信度测试所需依赖；torch 装 CPU 版以控制下载体积
           pip install "fastapi>=0.110" "uvicorn>=0.27" "pydantic>=2" "pyyaml>=6" \
                       "pandas>=2.1" "numpy>=1.26" "pytest>=8" "ruff>=0.3" "httpx>=0.27" \
-                      "python-dotenv>=1.0" "scikit-learn>=1.4" "loguru>=0.7"
+                      "python-dotenv>=1.0" "scikit-learn>=1.4" "loguru>=0.7" "psycopg[binary]>=3.1"
           pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0"
 
       - name: 静态检查

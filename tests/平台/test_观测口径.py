@@ -716,6 +716,7 @@ def test_腾讯日线成交量列必须换算为股与元():
     直接当成交额入库会造成"成交额 == 成交量"(行为分析.日行情 1271 万行)。"""
     import pandas as pd
 
+    pytest.importorskip("akshare", reason="akshare 为可选数据源依赖，CI 未安装时跳过")
     from market_platform.agents.采集.数据源 import _normalize_daily
 
     df = pd.DataFrame({"date": ["2026-09-23", "2026-09-24"], "open": [10.0, 11.0], "close": [12.0, 13.0],
