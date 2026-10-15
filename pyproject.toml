@@ -58,6 +58,7 @@ include = ["market_platform*"]
 # ── 测试 ────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]   # src 布局：无需 pip install 即可导入 market_platform（本机与 CI 一致）
 python_files = ["test_*.py", "*_test.py", "测试_*.py"]
 addopts = "-q"
 filterwarnings = [

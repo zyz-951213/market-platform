@@ -55,7 +55,7 @@ jobs:
       - name: 链接站点壳依赖并构建统一站点
         run: |
           mkdir -p web/node_modules
-          for p in vite vue; do ln -sfn "../模块/行为分析/node_modules/$p" "web/node_modules/$p"; done
+          for p in vite vue echarts; do ln -sfn "../模块/行为分析/node_modules/$p" "web/node_modules/$p"; done
           mkdir -p web/node_modules/@vitejs
           ln -sfn "../../模块/行为分析/node_modules/@vitejs/plugin-vue" "web/node_modules/@vitejs/plugin-vue"
           node web/构建.mjs
